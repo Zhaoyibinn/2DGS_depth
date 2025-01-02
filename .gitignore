@@ -13,4 +13,4 @@ data_psnr
 eval
 *.npz
 **/tmp
-submodules
+submodules/*

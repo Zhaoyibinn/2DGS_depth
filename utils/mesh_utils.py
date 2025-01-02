@@ -103,7 +103,7 @@ class GaussianExtractor(object):
         self.viewpoint_stack = []
 
     @torch.no_grad()
-    def reconstruction(self, viewpoint_stack):
+    def reconstruction(self, viewpoint_stack,gt = False):
         """
         reconstruct radiance field given cameras
         """
@@ -114,7 +114,13 @@ class GaussianExtractor(object):
             rgb = render_pkg['render']
             alpha = render_pkg['rend_alpha']
             normal = torch.nn.functional.normalize(render_pkg['rend_normal'], dim=0)
-            depth = render_pkg['surf_depth']
+            if gt:
+                depth = (viewpoint_cam.depth / 5000).cuda().unsqueeze(0)
+            else:
+                depth = render_pkg['surf_depth']
+
+            
+
             depth_normal = render_pkg['surf_normal']
             self.rgbmaps.append(rgb.cpu())
             self.depthmaps.append(depth.cpu())
@@ -128,6 +134,8 @@ class GaussianExtractor(object):
         # self.alphamaps = torch.stack(self.alphamaps, dim=0)
         # self.depth_normals = torch.stack(self.depth_normals, dim=0)
         self.estimate_bounding_sphere()
+
+        
 
     def estimate_bounding_sphere(self):
         """

@@ -23,7 +23,12 @@ from utils.image_utils import psnr, render_net_image
 from argparse import ArgumentParser, Namespace
 from arguments import ModelParams, PipelineParams, OptimizationParams
 import numpy as np
+
+
 import rerun as rr
+from zybtools.findPointNormals import findPointNormals 
+from zybtools.depth2cloud_1 import downsample_and_make_pointcloud2,downsample_and_make_pointcloud2_torch
+import open3d as o3d
 
 try:
     from torch.utils.tensorboard import SummaryWriter
@@ -31,7 +36,7 @@ try:
 except ImportError:
     TENSORBOARD_FOUND = False
 
-def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint):
+def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint,args):
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
@@ -87,8 +92,22 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         scaled_gt_depth = gt_depth / 5000
         depth[scaled_gt_depth.unsqueeze(0) == 0]=0
 
+        fx ,fy ,cx ,cy = 517.29999999999995,516.5,318.60000000000002,255.30000000000001
+        points, colors, z_values, trackable_filter = downsample_and_make_pointcloud2_torch(depth, image,[fx ,fy ,cx ,cy])
+        # pcd = o3d.geometry.PointCloud()
+        # pcd.points = o3d.utility.Vector3dVector(points)
+
+        
+        all_curv,normals,normal_cross,dis_close = findPointNormals(points,120)
+
+        loss_curv_normal = torch.abs(normal_cross).mean() 
+        loss_curv_curv = all_curv.mean()
+        loss_curv_dis = 1/dis_close.mean()
+        curv_loss = loss_curv_normal
+
         if rerun_viewer and iteration%100 == 0:
-            rr.log(f"pt/trackable/{iteration}", rr.Points3D(points_3d, radii=0.001))
+            rr.set_time_sequence("step", iteration)
+            rr.log(f"pt/trackable/{iteration}", rr.Points3D(points_3d[::5,:], radii=0.001))
             show_image = image
             show_image[show_image>1] = 1.00
             rr.log(f"images/trackable/render",rr.Image(np.transpose(show_image.cpu().detach(), (1, 2, 0))))
@@ -98,16 +117,20 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             scaled_gt_depth_vis[scaled_gt_depth_vis>1] = 1
             depth_vis = depth/scaled_gt_depth.max()
             depth_vis[depth_vis>1] = 1
-            rr.log(f"images/trackable/render_depth",rr.Image(np.array(scaled_gt_depth_vis.cpu().detach())))
-            rr.log(f"images/trackable/render_depth_gt",rr.Image(np.array(depth_vis.cpu().detach())))
+            rr.log(f"images/trackable/render_depth",rr.Image(np.array(depth_vis.cpu().detach())))
+            rr.log(f"images/trackable/render_depth_gt",rr.Image(np.array(scaled_gt_depth_vis.cpu().detach())))
 
         
 
         Ll1_depth = l1_loss(depth, scaled_gt_depth)
         
+        if iteration<7000:
+            lambda_curv = 0
+        else:
+            lambda_curv = (iteration-7000)/23000 * 0.1
 
         Ll1 = l1_loss(image, gt_image)
-        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image)) + 1.0 * Ll1_depth
+        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image)) + args.lambda_depth * Ll1_depth + lambda_curv * curv_loss
         
         # regularization
         lambda_normal = opt.lambda_normal if iteration > 7000 else 0.0
@@ -116,6 +139,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         rend_dist = render_pkg["rend_dist"]
         rend_normal  = render_pkg['rend_normal']
         surf_normal = render_pkg['surf_normal']
+
+
+
         normal_error = (1 - (rend_normal * surf_normal).sum(dim=0))[None]
         normal_loss = lambda_normal * (normal_error).mean()
         dist_loss = lambda_dist * (rend_dist).mean()
@@ -299,6 +325,7 @@ if __name__ == "__main__":
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default = None)
+    parser.add_argument("--lambda_depth", default = 1.0)
     args = parser.parse_args(sys.argv[1:])
     args.save_iterations.append(args.iterations)
     
@@ -310,7 +337,7 @@ if __name__ == "__main__":
     # Start GUI server, configure and run training
     network_gui.init(args.ip, args.port)
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
-    training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint)
+    training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint,args)
 
     # All done
     print("\nTraining complete.")

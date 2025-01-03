@@ -11,72 +11,29 @@ import torch.optim as optim
 import math
 from tqdm import tqdm
 
+import os
+import sys
+current_file_path = os.path.abspath(__file__)
+current_dir = os.path.dirname(current_file_path)
+parent_dir = os.path.dirname(current_dir)
+sys.path.insert(0, parent_dir)
+
 from torch_kdtree import build_kd_tree
 import matplotlib.pyplot as plt
 
-# def findPointNormals(pcd, numNeighbours):
-#     # create kdtree
+from extra_models.curv_opt import curv_loss
 
-#     N = pcd.shape[0]
-#     start_kd = time.time()
-#     # kdtree = KDTree(pcd)
-#     torch_kdtree = build_kd_tree(pcd)
-
-#     dists, indices = torch_kdtree.query(pcd, nr_nns_searches=numNeighbours)
+import rerun as rr
 
 
-#     print("kd_time : ",time.time()-start_kd)
-#     # get nearest neighbours
 
-#     # _, indices = kdtree.query(pcd, k=numNeighbours+1)
-#     # remove self
-#     indices = indices[:, 1:]
-#     # find difference in position from neighbouring points
-#     pts = pcd.repeat((numNeighbours-1), 1)
-#     p = pts - pts[indices.T.flatten(), :]
-#     # p = p[:, np.newaxis, :].transpose(1, 0, 2)
-#     p = p.reshape(numNeighbours-1, pcd.shape[0], 3)
-#     p = p.permute(1, 0, 2)
-#     p = p * 100
-#     # calculate values for covariance matrix
-#     C = torch.zeros((N, 6), device='cuda')
-#     C[:, 0] = torch.sum(p[:,  0] * p[:,  0], dim=1)
-#     C[:, 1] = torch.sum(p[:,  0] * p[:,  1], dim=1)
-#     C[:, 2] = torch.sum(p[:,  0] * p[:,  2], dim=1)
-#     C[:, 3] = torch.sum(p[:,  1] * p[:,  1], dim=1)
-#     C[:, 4] = torch.sum(p[:,  1] * p[:,  2], dim=1)
-#     C[:, 5] = torch.sum(p[:,  2] * p[:,  2], dim=1)
-#     C = C / (numNeighbours-1)
 
-#     # normals and curvature calculation
-#     # normals = np.zeros_like(pcd)
-#     # curvature = np.zeros(shape=(pcd.shape[0], 1))
+def cal_rendered_normal_loss(points, normals):
+    
 
-#     # start_kd = time.time()
-#     all_curv =  torch.zeros((N, 1), device=pcd.device)
-#     for i in range(pcd.shape[0]):
-#         Cmat = torch.stack([
-#             torch.stack([C[i, 0], C[i, 1], C[i, 2]]),
-#             torch.stack([C[i, 1], C[i, 3], C[i, 4]]),
-#             torch.stack([C[i, 2], C[i, 4], C[i, 5]])
-#         ], dim=-1).view(3, 3)
+    
+    return normal_cross
 
-#         eigen_value, eigen_vector = torch.linalg.eig(Cmat)
-#         # 按特征值大小，由小到达排序
-#         eigen_value = eigen_value.real
-#         eigen_vector = eigen_vector.real
-#         sort_idx = torch.argsort(eigen_value)
-#         eigen_value = eigen_value[sort_idx]
-#         eigen_vector = eigen_vector[:, sort_idx]
-#         # 利用特征值计算曲率
-#         curv = eigen_value[-1] / torch.sum(eigen_value)
-
-#         all_curv[i] = curv
-#         # 保存法向量和曲率
-#         # normals[i, :] = (eigen_vector[:, 0].reshape(1, 3))
-#         # curvature[i, :] = curv
-#     print("cal_time : ",time.time()-start_kd)
-#     return all_curv
 
 def findPointNormals(pcd, numNeighbours):
     numNeighbours = numNeighbours + 1
@@ -193,6 +150,7 @@ if __name__ == "__main__":
     cloud = o3d.io.read_point_cloud("/home/zhaoyibin/3DRE/3DGS/2d-gaussian-splatting/data/rgbd_dataset_freiburg1_desk/sparse/0/points3D.ply")
     print(cloud)
     np_cloud = np.asarray(cloud.points)[::10,:]
+    np_cloud = np.asarray(cloud.points)
     start = time.time()
     print(np_cloud.shape)
     pt_cloud = torch.tensor(np_cloud,dtype=torch.float32, device='cuda', requires_grad=True)
@@ -225,14 +183,22 @@ if __name__ == "__main__":
 
     optimizer = optim.SGD([pt_cloud], lr=10.00)
     y = []
+
+    rr.init("viewer",spawn=True)
+    rr.spawn(connect=False)
+    rr.connect()
     for i in tqdm(range(num_iterations), desc='Processing'):
         optimizer.zero_grad()
-        all_curv,normals,normal_cross,dis_close = findPointNormals(pt_cloud, 10)
 
-        loss_normal = torch.abs(normal_cross).mean() 
-        loss_curv = all_curv.mean()
-        loss_dis = 1/dis_close.mean()
-        loss = loss_normal 
+        # all_curv,normals,normal_cross,dis_close = findPointNormals(pt_cloud, 10)
+        # loss_normal = torch.abs(normal_cross).mean() 
+        # loss_curv = all_curv.mean()
+        # loss_dis = 1/dis_close.mean()
+        # loss = loss_normal 
+        
+        loss = curv_loss(pt_cloud, 10)
+        
+        
         loss.backward()
         # print(pt_cloud.grad)
         end = time.time()
@@ -240,6 +206,10 @@ if __name__ == "__main__":
         optimizer.step()
         tqdm.write(f"Iteration {i+1}, Loss: {loss.item():.6f},std: {torch.std(pt_cloud[:,-1]).item():.6f}")
         y.append(torch.std(pt_cloud[:,-1]).item())
+
+        if i %1 ==0:
+            rr.set_time_sequence("step", i)
+            rr.log(f"pt/trackable", rr.Points3D(pt_cloud.cpu().detach(), radii=0.01))
 
     x = range(num_iterations)
     plt.plot(x,y)

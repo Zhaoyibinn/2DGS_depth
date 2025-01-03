@@ -14,3 +14,4 @@ eval
 *.npz
 **/tmp
 submodules/*
+zybtools/torch_kdtree

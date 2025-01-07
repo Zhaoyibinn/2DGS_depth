@@ -30,7 +30,12 @@ from zybtools.findPointNormals import findPointNormals,cal_rendered_normal_loss
 from zybtools.depth2cloud_1 import downsample_and_make_pointcloud2,downsample_and_make_pointcloud2_torch, make_pointcloud2_torch
 import open3d as o3d
 from extra_models.curv_opt import curv_loss
+from extra_models.high_filter_opt import high_filter
 import torch.optim as optim
+
+import matplotlib.pyplot as plt
+
+from  extra_models.S3IM.s3im import S3IM
 
 try:
     from torch.utils.tensorboard import SummaryWriter
@@ -45,6 +50,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     scene = Scene(dataset, gaussians)
     gaussians.training_setup(opt)
 
+    S3IM_loss = S3IM()
     
     if checkpoint:
         (model_params, first_iter) = torch.load(checkpoint)
@@ -96,8 +102,12 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         scaled_gt_depth = gt_depth / 5000
         depth[scaled_gt_depth.unsqueeze(0) == 0]=0
 
+        # depth_highfiltered = high_filter(depth)
+        # depth_highfiltered_np = np.array(depth_highfiltered.cpu().detach())
+        # plt.imshow(depth_highfiltered_np)
+        # plt.show()
 
-        if iteration == 15000 or iteration == 25000:
+        if iteration==10000:
             optimizer_pt_curv = optim.SGD([gaussians._xyz], lr=10.00)
             for i in range(500):
 
@@ -110,13 +120,13 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 points = gaussians._xyz
                 lambda_curv = 1.0
                 # normal_cross = cal_rendered_normal_loss(points,render_pkg['rend_normal'])
-                loss_curv= curv_loss(points,10) * lambda_curv
+                loss_curv= curv_loss(points,30) * lambda_curv
                 
                 # if iteration%10 == 0:
                 #     print("正在优化curv, loss = ",loss_curv.item())
                 loss_curv.backward()
                 optimizer_pt_curv.step()
-                rr.set_time_sequence("curv_step", i)
+                rr.set_time_sequence("curv_step", i + iteration)
                 rr.log(f"pt/trackable", rr.Points3D(np.array(points.cpu().detach())[::5,:], radii=0.01))
             
 
@@ -146,12 +156,19 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         Ll1_depth = l1_loss(depth, scaled_gt_depth)
         
+        image_faltten = image.reshape(3,-1).T
+        gt_image_faltten = gt_image.reshape(3,-1).T
 
+        idx = torch.randperm(image_faltten.shape[0])[:4096]
+
+        image_faltten_sel = image_faltten[idx]
+        gt_image_faltten_sel = gt_image_faltten[idx]
+        Ls3im = S3IM_loss(image_faltten_sel, gt_image_faltten_sel)
         
         Ll1 = l1_loss(image, gt_image)
         
             
-        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image)) + args.lambda_depth * Ll1_depth
+        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image)) + args.lambda_depth * Ll1_depth + 0.0 * Ls3im
         
         # regularization
         lambda_normal = opt.lambda_normal if iteration > 7000 else 0.0
@@ -347,7 +364,7 @@ if __name__ == "__main__":
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default = None)
-    parser.add_argument("--lambda_depth", default = 1.0)
+    parser.add_argument("--lambda_depth", default = 2.0)
     args = parser.parse_args(sys.argv[1:])
     args.save_iterations.append(args.iterations)
     

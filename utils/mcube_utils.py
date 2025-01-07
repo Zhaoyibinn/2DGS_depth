@@ -31,7 +31,7 @@ def marching_cubes_with_contraction(
     cropN = 512
     level = 0
     N = resN // cropN
-
+    # 似乎N永远是2
     grid_min = bounding_box_min
     grid_max = bounding_box_max
     xs = np.linspace(grid_min[0], grid_max[0], N + 1)

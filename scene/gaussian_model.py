@@ -21,6 +21,8 @@ from simple_knn._C import distCUDA2
 from utils.graphics_utils import BasicPointCloud
 from utils.general_utils import strip_symmetric, build_scaling_rotation
 
+from pytorch3d.transforms import matrix_to_quaternion,quaternion_to_matrix
+
 class GaussianModel:
 
     def setup_functions(self):
@@ -42,6 +44,8 @@ class GaussianModel:
 
 
     def __init__(self, sh_degree : int):
+        self.extra_trans = torch.empty(0)
+        
         self.active_sh_degree = 0
         self.max_sh_degree = sh_degree  
         self._xyz = torch.empty(0)
@@ -100,9 +104,32 @@ class GaussianModel:
     def get_rotation(self):
         return self.rotation_activation(self._rotation)
     
+    def get_extratrans_rotation(self,idx):
+        extra_tran = self.extra_trans[idx]
+        R = extra_tran[:3,:3]
+        t = extra_tran[:3,3]
+        q = self.rotation_activation(self._rotation)
+
+        matrix = quaternion_to_matrix(q)
+        trans_matrix = matrix @ R + t
+        trans_q = matrix_to_quaternion(trans_matrix)
+
+        return self.rotation_activation(trans_q)
+    
     @property
     def get_xyz(self):
         return self._xyz
+    
+
+    def get_extratrans_xyz(self,idx):
+        # 每个视角的位姿都可以被优化了
+        extra_tran = self.extra_trans[idx]
+        R = extra_tran[:3,:3]
+        t = extra_tran[:3,3]
+        xyz = self._xyz
+
+        return xyz @ R + t
+    
     
     @property
     def get_features(self):
@@ -137,6 +164,10 @@ class GaussianModel:
 
         opacities = self.inverse_opacity_activation(0.1 * torch.ones((fused_point_cloud.shape[0], 1), dtype=torch.float, device="cuda"))
 
+        points_num = fused_point_cloud.shape[0]
+        identity_matrix = torch.eye(4)
+        identity_matrices = identity_matrix.unsqueeze(0).repeat(points_num, 1, 1).cuda()
+        self.extra_trans = nn.Parameter(identity_matrices.requires_grad_(True))
         self._xyz = nn.Parameter(fused_point_cloud.requires_grad_(True))
         self._features_dc = nn.Parameter(features[:,:,0:1].transpose(1, 2).contiguous().requires_grad_(True))
         self._features_rest = nn.Parameter(features[:,:,1:].transpose(1, 2).contiguous().requires_grad_(True))
@@ -150,13 +181,22 @@ class GaussianModel:
         self.xyz_gradient_accum = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
         self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
 
+        # l = [
+        #     {'params': [self._xyz], 'lr': training_args.position_lr_init * self.spatial_lr_scale, "name": "xyz"},
+        #     {'params': [self._features_dc], 'lr': training_args.feature_lr, "name": "f_dc"},
+        #     {'params': [self._features_rest], 'lr': training_args.feature_lr / 20.0, "name": "f_rest"},
+        #     {'params': [self._opacity], 'lr': training_args.opacity_lr, "name": "opacity"},
+        #     {'params': [self._scaling], 'lr': training_args.scaling_lr, "name": "scaling"},
+        #     {'params': [self._rotation], 'lr': training_args.rotation_lr, "name": "rotation"}
+        # ]
         l = [
             {'params': [self._xyz], 'lr': training_args.position_lr_init * self.spatial_lr_scale, "name": "xyz"},
             {'params': [self._features_dc], 'lr': training_args.feature_lr, "name": "f_dc"},
             {'params': [self._features_rest], 'lr': training_args.feature_lr / 20.0, "name": "f_rest"},
             {'params': [self._opacity], 'lr': training_args.opacity_lr, "name": "opacity"},
             {'params': [self._scaling], 'lr': training_args.scaling_lr, "name": "scaling"},
-            {'params': [self._rotation], 'lr': training_args.rotation_lr, "name": "rotation"}
+            {'params': [self._rotation], 'lr': training_args.rotation_lr, "name": "rotation"},
+            {'params': [self.extra_trans], 'lr': 0, "name": "extra_trans"}
         ]
 
         self.optimizer = torch.optim.Adam(l, lr=0.0, eps=1e-15)
@@ -164,12 +204,21 @@ class GaussianModel:
                                                     lr_final=training_args.position_lr_final*self.spatial_lr_scale,
                                                     lr_delay_mult=training_args.position_lr_delay_mult,
                                                     max_steps=training_args.position_lr_max_steps)
+        self.extra_trans_scheduler_args = get_expon_lr_func(lr_init=1e-5,
+                                                    lr_final=1e-4,
+                                                    lr_delay_steps = 10000,
+                                                    lr_delay_mult=0.5,
+                                                    max_steps=training_args.position_lr_max_steps)
 
     def update_learning_rate(self, iteration):
         ''' Learning rate scheduling per step '''
         for param_group in self.optimizer.param_groups:
             if param_group["name"] == "xyz":
                 lr = self.xyz_scheduler_args(iteration)
+                param_group['lr'] = lr
+            if param_group["name"] == "extra_trans":
+                lr = self.extra_trans_scheduler_args(iteration)
+                # print("extra_trans",lr)
                 param_group['lr'] = lr
                 return lr
 
@@ -272,6 +321,8 @@ class GaussianModel:
     def _prune_optimizer(self, mask):
         optimizable_tensors = {}
         for group in self.optimizer.param_groups:
+            if group['name'] == "extra_trans":
+                continue
             stored_state = self.optimizer.state.get(group['params'][0], None)
             if stored_state is not None:
                 stored_state["exp_avg"] = stored_state["exp_avg"][mask]
@@ -306,6 +357,8 @@ class GaussianModel:
     def cat_tensors_to_optimizer(self, tensors_dict):
         optimizable_tensors = {}
         for group in self.optimizer.param_groups:
+            if group['name'] == "extra_trans":
+                continue
             assert len(group["params"]) == 1
             extension_tensor = tensors_dict[group["name"]]
             stored_state = self.optimizer.state.get(group['params'][0], None)

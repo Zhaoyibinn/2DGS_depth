@@ -52,7 +52,8 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
 
     rasterizer = GaussianRasterizer(raster_settings=raster_settings)
 
-    means3D = pc.get_xyz
+    # means3D = pc.get_xyz
+    means3D = pc.get_extratrans_xyz(int(viewpoint_camera.image_name))
     means2D = screenspace_points
     opacity = pc.get_opacity
 
@@ -75,7 +76,8 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         cov3D_precomp = (splat2world[:, [0,1,3]] @ world2pix[:,[0,1,3]]).permute(0,2,1).reshape(-1, 9) # column major
     else:
         scales = pc.get_scaling
-        rotations = pc.get_rotation
+        # rotations = pc.get_rotation
+        rotations = pc.get_extratrans_rotation(int(viewpoint_camera.image_name))
     
     # If precomputed colors are provided, use them. Otherwise, if it is desired to precompute colors
     # from SHs in Python, do it. If not, then SH -> RGB conversion will be done by rasterizer.

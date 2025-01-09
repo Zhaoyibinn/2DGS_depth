@@ -27,11 +27,24 @@ import rerun as rr
 from zybtools.depth2cloud_1 import downsample_and_make_pointcloud2
 import open3d as o3d
 
+from extra_models.check_depth_consistency import check_geometric_consistency
+
+import matplotlib.pyplot as plt
+
 try:
     from torch.utils.tensorboard import SummaryWriter
     TENSORBOARD_FOUND = True
 except ImportError:
     TENSORBOARD_FOUND = False
+
+def cameras_trans(camera):
+    current_R , current_t = camera.R,camera.T
+    current_ext_mat = np.eye(4)
+    current_ext_mat[:3,:3] = current_R
+    current_ext_mat[:3,3] = current_t
+
+    return current_ext_mat
+
 
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint):
     first_iter = 0
@@ -64,21 +77,83 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
 
     sorted_TrainCameras = sorted(scene.getTrainCameras().copy(), key=lambda x: int(x.image_name))
-    for camera in sorted_TrainCameras:
-        # print(camera)
-        fx ,fy ,cx ,cy = 517.29999999999995,516.5,318.60000000000002,255.30000000000001
-        K = [[fx,0,cx],[0,fy,cy],[0,0,1]]
-        R , T = camera.R , camera.T
-        # T = -np.matmul(R, T)
-        name = camera.image_name
-        RGB = camera.original_image
-        depth = camera.depth
+
+    fx ,fy ,cx ,cy = 517.29999999999995,516.5,318.60000000000002,255.30000000000001
+    K = [[fx,0,cx],[0,fy,cy],[0,0,1]]
+    # depths = []
+    # ext_mats = []
+    # names = []
+    # RGBs = []
+    # for camera in sorted_TrainCameras:
+    #     # print(camera)
+    #     
+    #     
+    #     R , T = camera.R , camera.T
+    #     ext_mat = np.eye(4)
+    #     ext_mat[:3,:3] = R
+    #     ext_mat[:3,3] = T
+    #     # T = -np.matmul(R, T)
+    #     name = camera.image_name
+    #     RGB = camera.original_image
+    #     depth = camera.depth
+        
+    #     depths.append(depth)
+    #     ext_mats.append(ext_mat)
+    #     names.append(name)
+    #     RGBs.append(np.transpose(RGB.cpu().detach(),(1,2,0)))
+        
+    #     points, colors, z_values, trackable_filter = downsample_and_make_pointcloud2(np.array(depth.cpu().detach()), np.transpose(np.array(RGB.cpu().detach()),(1,2,0)),[fx ,fy ,cx ,cy])
+        
+    #     points = np.matmul(R, points.transpose()).transpose() - np.matmul(R, T)
+
+
+    #     try:
+    #         all_points = np.concatenate((all_points, points), axis=0)
+    #         all_colors = np.concatenate((all_colors, colors), axis=0)
+    #     except:
+    #         all_points = points
+    #         all_colors = colors
+
+
+    #     print(f"{camera.image_name}:pointcloud_processed end")
+    
+    for ii in range(sorted_TrainCameras.__len__()):
+        
+        range_num = 15
+        ref_tart = max(0, ii - range_num)
+        ref_end = min(sorted_TrainCameras.__len__()-1, ii + range_num)
+        ref_idxs = list(range(ref_tart, ref_end + 1))
+        ref_idxs.remove(ii)
+        dy_range = len(ref_idxs) + 1
+        
+        current_depth = np.array(sorted_TrainCameras[ii].depth.cpu().detach() / 5000)
+        current_ext_mat = cameras_trans(sorted_TrainCameras[ii])
 
         
+        in_mat = K
+
+        geo_mask_sum = 0
+        geo_mask_sums = [0] * (dy_range - 1)
+
+        for ref_idx in ref_idxs:
+            ref_ext_mat = cameras_trans(sorted_TrainCameras[ref_idx])
+            ref_depth = np.array(sorted_TrainCameras[ref_idx].depth.cpu().detach() / 5000)
+            masks, geo_mask, depth_reprojected, x2d_src, y2d_src = check_geometric_consistency(current_depth,in_mat,current_ext_mat,ref_depth,in_mat,ref_ext_mat)
+            
+            # geo_mask_sum += geo_mask.astype(np.int32)
+            geo_mask_sum += masks[-1].astype(np.int32)
+            for i in range(1, dy_range):
+                geo_mask_sums[i - 1] += masks[i - 1].astype(np.int32)
+
+        geo_mask = geo_mask_sum >= dy_range * 0.8
+
+        R , T = sorted_TrainCameras[ii].R , sorted_TrainCameras[ii].T
+        RGB = sorted_TrainCameras[ii].original_image
+        depth = sorted_TrainCameras[ii].depth
+        depth[~torch.tensor(geo_mask)] = 0
         points, colors, z_values, trackable_filter = downsample_and_make_pointcloud2(np.array(depth.cpu().detach()), np.transpose(np.array(RGB.cpu().detach()),(1,2,0)),[fx ,fy ,cx ,cy])
         
         points = np.matmul(R, points.transpose()).transpose() - np.matmul(R, T)
-
 
         try:
             all_points = np.concatenate((all_points, points), axis=0)
@@ -86,10 +161,15 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         except:
             all_points = points
             all_colors = colors
+        
+        # pcd = o3d.geometry.PointCloud()
+        # pcd.points = o3d.utility.Vector3dVector(all_points)
+        # o3d.visualization.draw_geometries([pcd])
+        print(f"{sorted_TrainCameras[ii].image_name}:pointcloud_processed end")
 
 
-        print(f"{camera.image_name}:pointcloud_processed end")
 
+    
     pcd = o3d.geometry.PointCloud()
     pcd.points = o3d.utility.Vector3dVector(all_points)
     pcd.colors = o3d.utility.Vector3dVector(all_colors)

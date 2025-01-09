@@ -69,7 +69,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
-    rerun_viewer = True
+    rerun_viewer = args.rerun
     if rerun_viewer:
         rr.init("3dgsviewer")
         rr.spawn(connect=False)
@@ -79,7 +79,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         iter_start.record()
 
         gaussians.update_learning_rate(iteration)
-        points_3d = np.array(gaussians._xyz.cpu().detach())
+        
 
         # Every 1000 its we increase the levels of SH up to a maximum degree
         if iteration % 1000 == 0:
@@ -89,7 +89,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         if not viewpoint_stack:
             viewpoint_stack = scene.getTrainCameras().copy()
         viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1))
-        
+        # viewpoint_cam = [camera for camera in viewpoint_stack if camera.image_name == "519"][0]
+
         render_pkg = render(viewpoint_cam, gaussians, pipe, background)
         image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
         
@@ -106,11 +107,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         # depth_highfiltered_np = np.array(depth_highfiltered.cpu().detach())
         # plt.imshow(depth_highfiltered_np)
         # plt.show()
-
-        if iteration==10000:
+        
+        if iteration in args.curv_iterations:
             optimizer_pt_curv = optim.SGD([gaussians._xyz], lr=10.00)
             for i in range(500):
-
+                
                 optimizer_pt_curv.zero_grad()
                 # fx ,fy ,cx ,cy = 517.29999999999995,516.5,318.60000000000002,255.30000000000001
                 # points, colors, z_values, trackable_filter = make_pointcloud2_torch(depth, image,[fx ,fy ,cx ,cy])
@@ -126,8 +127,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 #     print("正在优化curv, loss = ",loss_curv.item())
                 loss_curv.backward()
                 optimizer_pt_curv.step()
-                rr.set_time_sequence("curv_step", i + iteration)
-                rr.log(f"pt/trackable", rr.Points3D(np.array(points.cpu().detach())[::5,:], radii=0.01))
+                if rerun_viewer:
+                    rr.set_time_sequence("curv_step", i + iteration)
+                    rr.log(f"pt/trackable", rr.Points3D(np.array(points.cpu().detach())[::5,:], radii=0.01))
             
 
             # curv_loss = loss_curv_normal
@@ -135,10 +137,12 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             # loss = lambda_curv * curv_loss
 
 
+        points_3d = np.array(gaussians.get_extratrans_xyz(int(viewpoint_cam.image_name)).cpu().detach())
 
-
-        if rerun_viewer and iteration%100 == 0:
+        if rerun_viewer and (int(viewpoint_cam.image_name) == 519 or iteration%100 == 0):
+        # if rerun_viewer and iteration%100 == 0:
             rr.set_time_sequence("step", iteration)
+            # print("gaussians.extra_trans[519]:",gaussians.extra_trans[519])
             rr.log(f"pt/trackable", rr.Points3D(points_3d[::5,:], radii=0.01))
             show_image = image
             show_image[show_image>1] = 1.00
@@ -168,7 +172,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         Ll1 = l1_loss(image, gt_image)
         
             
-        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image)) + args.lambda_depth * Ll1_depth + 0.0 * Ls3im
+        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image)) + args.lambda_depth * Ll1_depth + args.lambda_s3im * Ls3im
         
         # regularization
         lambda_normal = opt.lambda_normal if iteration > 7000 else 0.0
@@ -364,7 +368,15 @@ if __name__ == "__main__":
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default = None)
-    parser.add_argument("--lambda_depth", default = 2.0)
+
+    
+    parser.add_argument("--lambda_depth",type=float, default = 1.0)
+    parser.add_argument("--lambda_s3im", type=float,default = 0.25)
+    parser.add_argument("--curv_iterations", nargs="+", type=int, default=[10000])
+
+
+    parser.add_argument("--rerun",action='store_true',default = False)
+    
     args = parser.parse_args(sys.argv[1:])
     args.save_iterations.append(args.iterations)
     

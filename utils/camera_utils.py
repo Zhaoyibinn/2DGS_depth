@@ -13,6 +13,8 @@ from scene.cameras import Camera
 import numpy as np
 from utils.general_utils import PILtoTorch
 from utils.graphics_utils import fov2focal
+from tqdm import tqdm
+
 
 WARNED = False
 
@@ -54,13 +56,16 @@ def loadCam(args, id, cam_info, resolution_scale):
     return Camera(colmap_id=cam_info.uid, R=cam_info.R, T=cam_info.T, 
                   FoVx=cam_info.FovX, FoVy=cam_info.FovY, 
                   image=gt_image, depth = depth,gt_alpha_mask=loaded_mask,
-                  image_name=cam_info.image_name, uid=id, data_device=args.data_device
+                  image_name=cam_info.image_name, uid=id, data_device=args.data_device,K = cam_info.K
                   )
 
 def cameraList_from_camInfos(cam_infos, resolution_scale, args):
     camera_list = []
 
-    for id, c in enumerate(cam_infos):
+
+    for id, c in tqdm(enumerate(cam_infos), desc="正在从系统中读取图片等文件",total=cam_infos.__len__()):
+        # if id % 100 == 0 :
+        #     print(id)
         camera_list.append(loadCam(args, id, c, resolution_scale))
 
     return camera_list

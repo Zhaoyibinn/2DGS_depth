@@ -59,6 +59,21 @@ if __name__ == "__main__":
     if not args.skip_train:
         print("export training images ...")
         os.makedirs(train_dir, exist_ok=True)
+        train_camera = scene.getTrainCameras()
+        extra_trans = scene.gaussians.extra_trans
+        idx_camera = 0
+        for camera in train_camera:
+            idx = int(camera.image_name)
+            extra_tran = torch.inverse(extra_trans[idx])
+            # extra_tran = extra_trans[idx]
+
+            trans_w2c = extra_tran @ torch.inverse((camera.world_view_transform).T)
+            camera.world_view_transform = torch.inverse(trans_w2c).T
+            
+            # camera.world_view_transform = (extra_tran @ (camera.world_view_transform).T).T 
+            camera.full_proj_transform = camera.world_view_transform @ camera.projection_matrix
+            train_camera[idx_camera] = camera
+            idx_camera += 1
         gaussExtractor.reconstruction(scene.getTrainCameras())
         gaussExtractor.export_image(train_dir)
         

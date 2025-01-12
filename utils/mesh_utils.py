@@ -110,7 +110,9 @@ class GaussianExtractor(object):
         self.clean()
         self.viewpoint_stack = viewpoint_stack
         for i, viewpoint_cam in tqdm(enumerate(self.viewpoint_stack), desc="reconstruct radiance fields"):
-            render_pkg = self.render(viewpoint_cam, self.gaussians)
+            
+
+            render_pkg = self.render(viewpoint_cam, self.gaussians,no_extra_trans=True)
             rgb = render_pkg['render']
             alpha = render_pkg['rend_alpha']
             normal = torch.nn.functional.normalize(render_pkg['rend_normal'], dim=0)
@@ -331,7 +333,8 @@ class GaussianExtractor(object):
             gt_depth = viewpoint_cam.depth
             save_img_u8(gt.permute(1,2,0).cpu().numpy(), os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))
             
-            
+            difference = self.rgbmaps[idx] - gt
+            save_img_u8(difference.permute(1,2,0).cpu().numpy(), os.path.join(gts_path, 'diff_{0:05d}'.format(idx) + ".png"))
 
             gt_depth_vis = gt_depth/gt_depth.max() * 255
             cv2.imwrite(os.path.join(vis_path, '{0:05d}_depth_gt_vis'.format(idx) + ".png"),np.array(gt_depth_vis))

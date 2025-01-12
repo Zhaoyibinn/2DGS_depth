@@ -24,6 +24,8 @@ from utils.sh_utils import SH2RGB
 from scene.gaussian_model import BasicPointCloud
 import cv2
 
+from zybtools.dtu_depth import read_pfm
+
 class CameraInfo(NamedTuple):
     uid: int
     R: np.array
@@ -36,6 +38,7 @@ class CameraInfo(NamedTuple):
     width: int
     height: int
     depth: str
+    K: np.array
 
 class SceneInfo(NamedTuple):
     point_cloud: BasicPointCloud
@@ -129,25 +132,46 @@ def readColmapCameras_depth(cam_extrinsics, cam_intrinsics, images_folder,depth_
             focal_length_x = intr.params[0]
             FovY = focal2fov(focal_length_x, height)
             FovX = focal2fov(focal_length_x, width)
+
+            cx = intr.params[2]
+            cy = intr.params[2]
+            K = [[focal_length_x,0,cx],[0,focal_length_x,cy],[0,0,1]]
         elif intr.model=="PINHOLE":
             focal_length_x = intr.params[0]
             focal_length_y = intr.params[1]
+            cx = intr.params[2]
+            cy = intr.params[2]
+
             FovY = focal2fov(focal_length_y, height)
             FovX = focal2fov(focal_length_x, width)
+
+            K = [[focal_length_x,0,cx],[0,focal_length_y,cy],[0,0,1]]
+
         else:
             assert False, "Colmap camera model not handled: only undistorted datasets (PINHOLE or SIMPLE_PINHOLE cameras) supported!"
 
         image_path = os.path.join(images_folder, os.path.basename(extr.name))
         image_name = os.path.basename(image_path).split(".")[0]
         # depth_name = image_name.replace("color","depth") + ".png"
-        depth_name = image_name + "_depth.png"
-        depth_path = os.path.join(depth_folder, depth_name)
-
         image = Image.open(image_path)
-        depth = cv2.imread(depth_path,cv2.IMREAD_UNCHANGED)
+
+        assert os.path.exists(os.path.join(depth_folder, image_name + "_depth.png")) or os.path.exists(os.path.join(depth_folder, image_name + "_depth.pfm")),"既没有检查到png也没有检查到pfm,请检查格式"
+
+        if os.path.exists(os.path.join(depth_folder, image_name + "_depth.png")):
+            depth_name = image_name + "_depth.png"
+            depth_path = os.path.join(depth_folder, depth_name)
+            
+
+            depth = cv2.imread(depth_path,cv2.IMREAD_UNCHANGED)
+        elif os.path.exists(os.path.join(depth_folder, image_name + "_depth.pfm")):
+            pfm_path = os.path.join(depth_folder, image_name + "_depth.pfm")
+            depth_origin = read_pfm(pfm_path)
+            depth = cv2.resize(depth_origin, (image.width, image.height), interpolation=cv2.INTER_NEAREST)
+            # print("pfm")
+            
 
         cam_info = CameraInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image=image,depth=depth,
-                              image_path=image_path, image_name=image_name, width=width, height=height)
+                              image_path=image_path, image_name=image_name, width=width, height=height,K = K)
         cam_infos.append(cam_info)
     sys.stdout.write('\n')
     return cam_infos

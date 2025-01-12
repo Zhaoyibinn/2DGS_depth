@@ -48,6 +48,9 @@ def cameras_trans(camera):
 
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint):
     first_iter = 0
+
+    depth_scale = 324.65518
+
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
     scene = Scene(dataset, gaussians)
@@ -70,16 +73,18 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
     rerun_viewer = True
-    if rerun_viewer:
-        rr.init("3dgsviewer")
-        rr.spawn(connect=False)
-        rr.connect()
+    # if rerun_viewer:
+    #     rr.init("3dgsviewer")
+    #     rr.spawn(connect=False)
+    #     rr.connect()
 
 
     sorted_TrainCameras = sorted(scene.getTrainCameras().copy(), key=lambda x: int(x.image_name))
 
-    fx ,fy ,cx ,cy = 517.29999999999995,516.5,318.60000000000002,255.30000000000001
-    K = [[fx,0,cx],[0,fy,cy],[0,0,1]]
+
+    # fx ,fy ,cx ,cy = 517.29999999999995,516.5,318.60000000000002,255.30000000000001
+    K = sorted_TrainCameras[0].K
+    fx ,fy ,cx ,cy = K[0][0],K[1][1],K[0][2],K[1][2]
     # depths = []
     # ext_mats = []
     # names = []
@@ -119,25 +124,23 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     
     for ii in range(sorted_TrainCameras.__len__()):
         
-        range_num = 15
+        range_num = 1
         ref_tart = max(0, ii - range_num)
         ref_end = min(sorted_TrainCameras.__len__()-1, ii + range_num)
         ref_idxs = list(range(ref_tart, ref_end + 1))
         ref_idxs.remove(ii)
         dy_range = len(ref_idxs) + 1
         
-        current_depth = np.array(sorted_TrainCameras[ii].depth.cpu().detach() / 5000)
+        current_depth = np.array(sorted_TrainCameras[ii].depth.cpu().detach() / depth_scale)
         current_ext_mat = cameras_trans(sorted_TrainCameras[ii])
 
         
         in_mat = K
-
         geo_mask_sum = 0
         geo_mask_sums = [0] * (dy_range - 1)
-
         for ref_idx in ref_idxs:
             ref_ext_mat = cameras_trans(sorted_TrainCameras[ref_idx])
-            ref_depth = np.array(sorted_TrainCameras[ref_idx].depth.cpu().detach() / 5000)
+            ref_depth = np.array(sorted_TrainCameras[ref_idx].depth.cpu().detach() / depth_scale)
             masks, geo_mask, depth_reprojected, x2d_src, y2d_src = check_geometric_consistency(current_depth,in_mat,current_ext_mat,ref_depth,in_mat,ref_ext_mat)
             
             # geo_mask_sum += geo_mask.astype(np.int32)
@@ -148,10 +151,16 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         geo_mask = geo_mask_sum >= dy_range * 0.8
 
         R , T = sorted_TrainCameras[ii].R , sorted_TrainCameras[ii].T
+        
+        
         RGB = sorted_TrainCameras[ii].original_image
         depth = sorted_TrainCameras[ii].depth
-        depth[~torch.tensor(geo_mask)] = 0
-        points, colors, z_values, trackable_filter = downsample_and_make_pointcloud2(np.array(depth.cpu().detach()), np.transpose(np.array(RGB.cpu().detach()),(1,2,0)),[fx ,fy ,cx ,cy])
+        
+        # depth[~torch.tensor(geo_mask)] = 0
+
+
+
+        points, colors, z_values, trackable_filter = downsample_and_make_pointcloud2(np.array(depth.cpu().detach()), np.transpose(np.array(RGB.cpu().detach()),(1,2,0)),[fx ,fy ,cx ,cy],depth_scale)
         
         points = np.matmul(R, points.transpose()).transpose() - np.matmul(R, T)
 
@@ -162,10 +171,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             all_points = points
             all_colors = colors
         
-        # pcd = o3d.geometry.PointCloud()
-        # pcd.points = o3d.utility.Vector3dVector(all_points)
-        # o3d.visualization.draw_geometries([pcd])
-        print(f"{sorted_TrainCameras[ii].image_name}:pointcloud_processed end")
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(all_points)
+        o3d.visualization.draw_geometries([pcd])
+        np.where(geo_mask == True)[0].shape[0] / (geo_mask.shape[0]* geo_mask.shape[1])
+        print(f"{sorted_TrainCameras[ii].image_name}:pointcloud_processed end,{(np.where(geo_mask == True)[0].shape[0] / (geo_mask.shape[0]* geo_mask.shape[1]) * 100 ):.3f}% saved")
 
 
 

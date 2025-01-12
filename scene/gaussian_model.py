@@ -62,6 +62,8 @@ class GaussianModel:
         self.spatial_lr_scale = 0
         self.setup_functions()
 
+        self.cameras_idx_max = 0
+
     def capture(self):
         return (
             self.active_sh_degree,
@@ -128,7 +130,7 @@ class GaussianModel:
         t = extra_tran[:3,3]
         xyz = self._xyz
 
-        return xyz @ R + t
+        return (R @ xyz.T + t.unsqueeze(1)).T
     
     
     @property
@@ -148,7 +150,7 @@ class GaussianModel:
         if self.active_sh_degree < self.max_sh_degree:
             self.active_sh_degree += 1
 
-    def create_from_pcd(self, pcd : BasicPointCloud, spatial_lr_scale : float):
+    def create_from_pcd(self,args_input,pcd : BasicPointCloud, spatial_lr_scale : float):
         self.spatial_lr_scale = spatial_lr_scale
         fused_point_cloud = torch.tensor(np.asarray(pcd.points)).float().cuda()
         fused_color = RGB2SH(torch.tensor(np.asarray(pcd.colors)).float().cuda())
@@ -164,10 +166,8 @@ class GaussianModel:
 
         opacities = self.inverse_opacity_activation(0.1 * torch.ones((fused_point_cloud.shape[0], 1), dtype=torch.float, device="cuda"))
 
-        points_num = fused_point_cloud.shape[0]
-        identity_matrix = torch.eye(4)
-        identity_matrices = identity_matrix.unsqueeze(0).repeat(points_num, 1, 1).cuda()
-        self.extra_trans = nn.Parameter(identity_matrices.requires_grad_(True))
+        # points_num = fused_point_cloud.shape[0]
+        self.init_extra_pose()
         self._xyz = nn.Parameter(fused_point_cloud.requires_grad_(True))
         self._features_dc = nn.Parameter(features[:,:,0:1].transpose(1, 2).contiguous().requires_grad_(True))
         self._features_rest = nn.Parameter(features[:,:,1:].transpose(1, 2).contiguous().requires_grad_(True))
@@ -205,12 +205,12 @@ class GaussianModel:
                                                     lr_delay_mult=training_args.position_lr_delay_mult,
                                                     max_steps=training_args.position_lr_max_steps)
         self.extra_trans_scheduler_args = get_expon_lr_func(lr_init=1e-5,
-                                                    lr_final=1e-4,
+                                                    lr_final=1e-5,
                                                     lr_delay_steps = 10000,
                                                     lr_delay_mult=0.5,
                                                     max_steps=training_args.position_lr_max_steps)
 
-    def update_learning_rate(self, iteration):
+    def update_learning_rate(self, iteration,args):
         ''' Learning rate scheduling per step '''
         for param_group in self.optimizer.param_groups:
             if param_group["name"] == "xyz":
@@ -219,7 +219,11 @@ class GaussianModel:
             if param_group["name"] == "extra_trans":
                 lr = self.extra_trans_scheduler_args(iteration)
                 # print("extra_trans",lr)
-                param_group['lr'] = lr
+                if args.extra_pose:
+                    param_group['lr'] = lr
+                else:
+                    param_group['lr'] = 0.0
+                
                 return lr
 
     def construct_list_of_attributes(self):
@@ -254,6 +258,9 @@ class GaussianModel:
         elements[:] = list(map(tuple, attributes))
         el = PlyElement.describe(elements, 'vertex')
         PlyData([el]).write(path)
+    def save_extra_trans(self,path):
+        torch.save(self.extra_trans, path)
+        return 0
 
     def reset_opacity(self):
         opacities_new = self.inverse_opacity_activation(torch.min(self.get_opacity, torch.ones_like(self.get_opacity)*0.01))
@@ -302,6 +309,16 @@ class GaussianModel:
         self._rotation = nn.Parameter(torch.tensor(rots, dtype=torch.float, device="cuda").requires_grad_(True))
 
         self.active_sh_degree = self.max_sh_degree
+
+    def load_extra_pose(self,pth_path):
+        extra_trans = torch.load(pth_path, map_location=torch.device('cuda'))
+        self.extra_trans = nn.Parameter(torch.tensor(extra_trans, dtype=torch.float, device="cuda").requires_grad_(True))
+        
+    def init_extra_pose(self):
+        identity_matrix = torch.eye(4)
+
+        identity_matrices = identity_matrix.unsqueeze(0).repeat(self.cameras_idx_max + 1, 1, 1).cuda()
+        self.extra_trans = nn.Parameter(identity_matrices.requires_grad_(True))
 
     def replace_tensor_to_optimizer(self, tensor, name):
         optimizable_tensors = {}

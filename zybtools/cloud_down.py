@@ -1,0 +1,17 @@
+import open3d as o3d
+import numpy as np
+
+in_path = "data/tum/rgbd_dataset_freiburg1_floor/sparse/0/points3D_MVS.ply"
+out_path = "data/tum/rgbd_dataset_freiburg1_floor/sparse/0/points3D_MVS_down.ply"
+# 读取PLY文件
+pcd = o3d.io.read_point_cloud(in_path)
+
+# 体素降采样
+# 假设体素大小为0.05，你可以根据需要调整这个参数
+voxel_down_pcd = pcd.voxel_down_sample(voxel_size=0.03)
+
+print(pcd)
+print(voxel_down_pcd)
+
+# 保存降采样后的点云到新的PLY文件
+o3d.io.write_point_cloud(out_path, voxel_down_pcd)

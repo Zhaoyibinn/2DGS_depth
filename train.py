@@ -26,12 +26,14 @@ import numpy as np
 
 
 import rerun as rr
+from torch.utils.tensorboard import SummaryWriter
 from zybtools.findPointNormals import findPointNormals,cal_rendered_normal_loss
-from zybtools.depth2cloud_1 import downsample_and_make_pointcloud2,downsample_and_make_pointcloud2_torch, make_pointcloud2_torch
+# from zybtools.depth2cloud_1 import downsample_and_make_pointcloud2,downsample_and_make_pointcloud2_torch, make_pointcloud2_torch
 import open3d as o3d
 from extra_models.curv_opt import curv_loss
 from extra_models.high_filter_opt import high_filter
 import torch.optim as optim
+import time
 
 import matplotlib.pyplot as plt
 
@@ -45,6 +47,9 @@ except ImportError:
 
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint,args):
     first_iter = 0
+
+    depth_scale = 5000
+
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
     scene = Scene(dataset, gaussians)
@@ -66,6 +71,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     ema_loss_for_log = 0.0
     ema_dist_for_log = 0.0
     ema_normal_for_log = 0.0
+    ema_Ll1_depth_for_log = 0.0
+    ema_s3im_for_log = 0.0
 
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
@@ -74,11 +81,15 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         rr.init("3dgsviewer")
         rr.spawn(connect=False)
         rr.connect()
+
+
+
+    
     for iteration in range(first_iter, opt.iterations + 1):        
 
         iter_start.record()
 
-        gaussians.update_learning_rate(iteration)
+        gaussians.update_learning_rate(iteration,args)
         
 
         # Every 1000 its we increase the levels of SH up to a maximum degree
@@ -100,7 +111,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         gt_depth = viewpoint_cam.depth.cuda()
 
-        scaled_gt_depth = gt_depth / 5000
+        scaled_gt_depth = gt_depth / depth_scale
         depth[scaled_gt_depth.unsqueeze(0) == 0]=0
 
         # depth_highfiltered = high_filter(depth)
@@ -174,6 +185,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image)) + args.lambda_depth * Ll1_depth + args.lambda_s3im * Ls3im
         
+
+
         # regularization
         lambda_normal = opt.lambda_normal if iteration > 7000 else 0.0
         lambda_dist = opt.lambda_dist if iteration > 3000 else 0.0
@@ -201,6 +214,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
             ema_dist_for_log = 0.4 * dist_loss.item() + 0.6 * ema_dist_for_log
             ema_normal_for_log = 0.4 * normal_loss.item() + 0.6 * ema_normal_for_log
+            ema_Ll1_depth_for_log = 0.4 * Ll1_depth.item() + 0.6 * ema_Ll1_depth_for_log
+            ema_s3im_for_log = 0.4 * Ls3im.item() + 0.6 * ema_s3im_for_log
 
 
             if iteration % 10 == 0:
@@ -208,7 +223,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                     "Loss": f"{ema_loss_for_log:.{5}f}",
                     "distort": f"{ema_dist_for_log:.{5}f}",
                     "normal": f"{ema_normal_for_log:.{5}f}",
-                    "Points": f"{len(gaussians.get_xyz)}"
+                    "Points": f"{len(gaussians.get_xyz)}",
+                    "Depth_L1":f"{ema_Ll1_depth_for_log:.{5}f}",
+                    "s3im_L1":f"{ema_s3im_for_log:.{5}f}"
                 }
                 progress_bar.set_postfix(loss_dict)
 
@@ -220,6 +237,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             if tb_writer is not None:
                 tb_writer.add_scalar('train_loss_patches/dist_loss', ema_dist_for_log, iteration)
                 tb_writer.add_scalar('train_loss_patches/normal_loss', ema_normal_for_log, iteration)
+                tb_writer.add_scalar('train_loss_patches/depth_loss', ema_Ll1_depth_for_log, iteration)
+                tb_writer.add_scalar('train_loss_patches/s3im_loss', ema_s3im_for_log, iteration)
 
             training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background))
             if (iteration in saving_iterations):
@@ -272,13 +291,15 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                     # raise e
                     network_gui.conn = None
 
+
 def prepare_output_and_logger(args):    
     if not args.model_path:
         if os.getenv('OAR_JOB_ID'):
             unique_str=os.getenv('OAR_JOB_ID')
         else:
             unique_str = str(uuid.uuid4())
-        args.model_path = os.path.join("./output/", unique_str[0:10])
+            time_str = time.strftime("%Y-%m-%d-%H:%M:%S", time.localtime(time.time()))
+        args.model_path = os.path.join("./output/", time_str)
         
     # Set up output folder
     print("Output folder: {}".format(args.model_path))
@@ -364,7 +385,7 @@ if __name__ == "__main__":
     parser.add_argument('--port', type=int, default=6009)
     parser.add_argument('--detect_anomaly', action='store_true', default=False)
     parser.add_argument("--test_iterations", nargs="+", type=int, default=[7_000, 30_000])
-    parser.add_argument("--save_iterations", nargs="+", type=int, default=[7_000, 30_000])
+    parser.add_argument("--save_iterations", nargs="+", type=int, default=[500,7_000, 30_000])
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default = None)
@@ -372,10 +393,13 @@ if __name__ == "__main__":
     
     parser.add_argument("--lambda_depth",type=float, default = 1.0)
     parser.add_argument("--lambda_s3im", type=float,default = 0.25)
-    parser.add_argument("--curv_iterations", nargs="+", type=int, default=[10000])
+    parser.add_argument("--curv_iterations", nargs="+", type=int, default=[])
 
 
     parser.add_argument("--rerun",action='store_true',default = False)
+    parser.add_argument("--tfboard",action='store_true',default = False)
+    parser.add_argument("--extra_pose",action='store_true',default = False)
+
     
     args = parser.parse_args(sys.argv[1:])
     args.save_iterations.append(args.iterations)

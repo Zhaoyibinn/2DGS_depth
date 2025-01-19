@@ -12,7 +12,8 @@
 import os
 import torch
 from random import randint
-from utils.loss_utils import l1_loss, ssim
+from utils.loss_utils import l1_loss,ssim
+
 from gaussian_renderer import render, network_gui
 import sys
 from scene import Scene, GaussianModel
@@ -32,6 +33,7 @@ from zybtools.findPointNormals import findPointNormals,cal_rendered_normal_loss
 import open3d as o3d
 from extra_models.curv_opt import curv_loss
 from extra_models.high_filter_opt import high_filter
+from extra_models.blur_train.blur import Bayes_fit,mix_pic
 import torch.optim as optim
 import time
 
@@ -52,7 +54,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
-    scene = Scene(dataset, gaussians)
+    scene = Scene(dataset, gaussians,shuffle=False)
     gaussians.training_setup(opt)
 
     S3IM_loss = S3IM()
@@ -99,13 +101,68 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         # Pick a random Camera
         if not viewpoint_stack:
             viewpoint_stack = scene.getTrainCameras().copy()
-        viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1))
+            camera_sel_range = list(range(viewpoint_stack.__len__()))
+        
+        if not camera_sel_range:
+            camera_sel_range = list(range(viewpoint_stack.__len__()))
+
+        camera_sel = camera_sel_range.pop(randint(0, len(camera_sel_range)-1))
+        viewpoint_cam = viewpoint_stack[camera_sel]
+        
+        # viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1))
+        # viewpoint_cam = viewpoint_stack.pop(0)
+        # 原本是随机弹出，现在就弹出第一个
         # viewpoint_cam = [camera for camera in viewpoint_stack if camera.image_name == "519"][0]
 
-        render_pkg = render(viewpoint_cam, gaussians, pipe, background)
-        image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
-        
-        depth = render_pkg['surf_depth']
+        if args.blur:
+
+            
+            before_viewpoint_cam = viewpoint_stack[max(camera_sel-1,0)]
+            after_viewpoint_cam = viewpoint_stack[min(camera_sel+1,viewpoint_stack.__len__() - 1)]
+            # start = time.time()
+            Bayes_pose = Bayes_fit([before_viewpoint_cam,viewpoint_cam,after_viewpoint_cam],vis=False)
+            cameras_3 = Scene.init_new_cameras(viewpoint_cam,Bayes_pose)
+            # print("bayes time=",time.time() - start)
+            render_pkg_before = render(cameras_3[0], gaussians, pipe, background)
+            render_pkg_current = render(cameras_3[1], gaussians, pipe, background)
+            render_pkg_after = render(cameras_3[2], gaussians, pipe, background)
+            RGB_before = render_pkg_before["render"]
+            RGB_current = render_pkg_current["render"]
+            RGB_after = render_pkg_after["render"]
+            # RGB_before_np = np.transpose(np.array(RGB_before.cpu().detach()), (1, 2, 0))
+            # RGB_current_np = np.transpose(np.array(RGB_current.cpu().detach()), (1, 2, 0))
+            # RGB_after_np = np.transpose(np.array(RGB_after.cpu().detach()), (1, 2, 0))
+            # combined_image = np.hstack([RGB_before_np,RGB_current_np,RGB_after_np])
+            # plt.imshow(combined_image)
+
+            image = mix_pic([RGB_before,RGB_current,RGB_after],gaussians.blur_camera_vector[int(viewpoint_cam.image_name)])
+            _, viewspace_point_tensor, visibility_filter, radii = render_pkg_current["render"], render_pkg_current["viewspace_points"], render_pkg_current["visibility_filter"], render_pkg_current["radii"]
+            depth = render_pkg_current['surf_depth']
+            rend_dist = render_pkg_current["rend_dist"]
+            rend_normal  = render_pkg_current['rend_normal']
+            surf_normal = render_pkg_current['surf_normal']
+
+
+
+
+            # render_pkg = render(viewpoint_cam, gaussians, pipe, background)
+            # image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
+            # depth = render_pkg['surf_depth']
+            # rend_dist = render_pkg["rend_dist"]
+            # rend_normal  = render_pkg['rend_normal']
+            # surf_normal = render_pkg['surf_normal']
+
+
+
+
+
+        else:
+            render_pkg = render(viewpoint_cam, gaussians, pipe, background)
+            image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
+            depth = render_pkg['surf_depth']
+            rend_dist = render_pkg["rend_dist"]
+            rend_normal  = render_pkg['rend_normal']
+            surf_normal = render_pkg['surf_normal']
 
         gt_image = viewpoint_cam.original_image.cuda()
 
@@ -181,7 +238,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         Ls3im = S3IM_loss(image_faltten_sel, gt_image_faltten_sel)
         
         Ll1 = l1_loss(image, gt_image)
-        
+        # print("L1_loss: ",Ll1)
             
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image)) + args.lambda_depth * Ll1_depth + args.lambda_s3im * Ls3im
         
@@ -191,9 +248,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         lambda_normal = opt.lambda_normal if iteration > 7000 else 0.0
         lambda_dist = opt.lambda_dist if iteration > 3000 else 0.0
 
-        rend_dist = render_pkg["rend_dist"]
-        rend_normal  = render_pkg['rend_normal']
-        surf_normal = render_pkg['surf_normal']
+
 
 
 
@@ -221,11 +276,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             if iteration % 10 == 0:
                 loss_dict = {
                     "Loss": f"{ema_loss_for_log:.{5}f}",
-                    "distort": f"{ema_dist_for_log:.{5}f}",
-                    "normal": f"{ema_normal_for_log:.{5}f}",
-                    "Points": f"{len(gaussians.get_xyz)}",
-                    "Depth_L1":f"{ema_Ll1_depth_for_log:.{5}f}",
-                    "s3im_L1":f"{ema_s3im_for_log:.{5}f}"
+                    # "distort": f"{ema_dist_for_log:.{5}f}",
+                    # "normal": f"{ema_normal_for_log:.{5}f}",
+                    "Points": f"{len(gaussians.get_xyz)}"
+                    # "Depth_L1":f"{ema_Ll1_depth_for_log:.{5}f}",
+                    # "s3im_L1":f"{ema_s3im_for_log:.{5}f}"
                 }
                 progress_bar.set_postfix(loss_dict)
 
@@ -238,9 +293,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 tb_writer.add_scalar('train_loss_patches/dist_loss', ema_dist_for_log, iteration)
                 tb_writer.add_scalar('train_loss_patches/normal_loss', ema_normal_for_log, iteration)
                 tb_writer.add_scalar('train_loss_patches/depth_loss', ema_Ll1_depth_for_log, iteration)
+                tb_writer.add_scalar('train_loss_patches/l1_loss', ema_loss_for_log, iteration)
                 tb_writer.add_scalar('train_loss_patches/s3im_loss', ema_s3im_for_log, iteration)
 
-            training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background))
+            training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background),args)
             if (iteration in saving_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 scene.save(iteration)
@@ -316,7 +372,7 @@ def prepare_output_and_logger(args):
     return tb_writer
 
 @torch.no_grad()
-def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_iterations, scene : Scene, renderFunc, renderArgs):
+def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_iterations, scene : Scene, renderFunc, renderArgs,args):
     if tb_writer:
         tb_writer.add_scalar('train_loss_patches/reg_loss', Ll1.item(), iteration)
         tb_writer.add_scalar('train_loss_patches/total_loss', loss.item(), iteration)
@@ -333,9 +389,14 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
             if config['cameras'] and len(config['cameras']) > 0:
                 l1_test = 0.0
                 psnr_test = 0.0
+                ssim_test = 0.0
                 for idx, viewpoint in enumerate(config['cameras']):
                     render_pkg = renderFunc(viewpoint, scene.gaussians, *renderArgs)
                     image = torch.clamp(render_pkg["render"], 0.0, 1.0)
+                    if args.blur:
+                        bound = 0
+                        eps=1e-8
+                        image = ((image-bound) / (1.0-2.0*bound)).clamp_min(eps)  ** (1/2.2)
                     gt_image = torch.clamp(viewpoint.original_image.to("cuda"), 0.0, 1.0)
                     if tb_writer and (idx < 5):
                         from utils.general_utils import colormap
@@ -365,10 +426,12 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
 
                     l1_test += l1_loss(image, gt_image).mean().double()
                     psnr_test += psnr(image, gt_image).mean().double()
+                    ssim_test +=ssim(image, gt_image).mean().double()
 
                 psnr_test /= len(config['cameras'])
                 l1_test /= len(config['cameras'])
-                print("\n[ITER {}] Evaluating {}: L1 {} PSNR {}".format(iteration, config['name'], l1_test, psnr_test))
+                ssim_test /= len(config['cameras'])
+                print("\n[ITER {}] Evaluating {}: L1 {} PSNR {} SSIM {}".format(iteration, config['name'], l1_test, psnr_test,ssim_test))
                 if tb_writer:
                     tb_writer.add_scalar(config['name'] + '/loss_viewpoint - l1_loss', l1_test, iteration)
                     tb_writer.add_scalar(config['name'] + '/loss_viewpoint - psnr', psnr_test, iteration)
@@ -385,13 +448,13 @@ if __name__ == "__main__":
     parser.add_argument('--port', type=int, default=6009)
     parser.add_argument('--detect_anomaly', action='store_true', default=False)
     parser.add_argument("--test_iterations", nargs="+", type=int, default=[7_000, 30_000])
-    parser.add_argument("--save_iterations", nargs="+", type=int, default=[500,7_000, 30_000])
+    parser.add_argument("--save_iterations", nargs="+", type=int, default=[7_000, 30_000])
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default = None)
 
     
-    parser.add_argument("--lambda_depth",type=float, default = 1.0)
+    parser.add_argument("--lambda_depth",type=float, default = 0.0)
     parser.add_argument("--lambda_s3im", type=float,default = 0.25)
     parser.add_argument("--curv_iterations", nargs="+", type=int, default=[])
 
@@ -399,6 +462,7 @@ if __name__ == "__main__":
     parser.add_argument("--rerun",action='store_true',default = False)
     parser.add_argument("--tfboard",action='store_true',default = False)
     parser.add_argument("--extra_pose",action='store_true',default = False)
+    parser.add_argument("--blur",action='store_true',default = False)
 
     
     args = parser.parse_args(sys.argv[1:])

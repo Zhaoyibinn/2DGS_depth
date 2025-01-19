@@ -133,14 +133,14 @@ def readColmapCameras_depth(cam_extrinsics, cam_intrinsics, images_folder,depth_
             FovY = focal2fov(focal_length_x, height)
             FovX = focal2fov(focal_length_x, width)
 
-            cx = intr.params[2]
+            cx = intr.params[1]
             cy = intr.params[2]
             K = [[focal_length_x,0,cx],[0,focal_length_x,cy],[0,0,1]]
         elif intr.model=="PINHOLE":
             focal_length_x = intr.params[0]
             focal_length_y = intr.params[1]
             cx = intr.params[2]
-            cy = intr.params[2]
+            cy = intr.params[3]
 
             FovY = focal2fov(focal_length_y, height)
             FovX = focal2fov(focal_length_x, width)
@@ -217,8 +217,8 @@ def readColmapSceneInfo(path, images, eval, llffhold=8):
         cam_extrinsics = read_extrinsics_text(cameras_extrinsic_file)
         cam_intrinsics = read_intrinsics_text(cameras_intrinsic_file)
 
-    reading_dir = "images" if images == None else images
-    depth_dir = "depth"
+    reading_dir = "images_colmap"
+    depth_dir = "depth_colmap"
     try:
         cam_infos_unsorted = readColmapCameras_depth(cam_extrinsics=cam_extrinsics, cam_intrinsics=cam_intrinsics, images_folder=os.path.join(path, reading_dir),depth_folder =os.path.join(path, depth_dir))
         cam_infos = sorted(cam_infos_unsorted.copy(), key = lambda x : x.image_name)

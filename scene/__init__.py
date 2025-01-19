@@ -18,6 +18,12 @@ from scene.gaussian_model import GaussianModel
 from arguments import ModelParams
 from utils.camera_utils import cameraList_from_camInfos, camera_to_JSON
 
+import copy
+import numpy as np
+import torch
+
+from utils.graphics_utils import getWorld2View2
+
 
 
 
@@ -105,6 +111,20 @@ class Scene:
         else:
             self.gaussians.create_from_pcd(args,scene_info.point_cloud, self.cameras_extent)
 
+    def init_new_cameras(origin_camera,more_poses):
+        after_camera ,before_camera = copy.deepcopy(origin_camera),copy.deepcopy(origin_camera)
+        cameras_3 = [before_camera,origin_camera,after_camera]
+        more_poses = np.linalg.inv(more_poses)
+        R = more_poses[:,:3,:3]
+        R = R.transpose(0,2,1)
+        t = more_poses[:,:3,3]
+        for i in range(3):
+            cameras_3[i].world_view_transform = torch.tensor(getWorld2View2(R[i], t[i])).transpose(0, 1).cuda()
+            cameras_3[i].full_proj_transform = (cameras_3[i].world_view_transform.unsqueeze(0).bmm(cameras_3[i].projection_matrix.unsqueeze(0))).squeeze(0)
+            cameras_3[i].camera_center = cameras_3[i].world_view_transform.inverse()[3, :3]
+        
+        return cameras_3
+    
     def scene2mask(self):
         self.gaussians._features_rest.zero_()
 

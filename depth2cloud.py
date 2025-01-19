@@ -49,7 +49,7 @@ def cameras_trans(camera):
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint):
     first_iter = 0
 
-    depth_scale = 324.65518
+    depth_scale = 5000
 
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
@@ -148,7 +148,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             for i in range(1, dy_range):
                 geo_mask_sums[i - 1] += masks[i - 1].astype(np.int32)
 
-        geo_mask = geo_mask_sum >= dy_range * 0.8
+        geo_mask = geo_mask_sum >= dy_range * 0.9
 
         R , T = sorted_TrainCameras[ii].R , sorted_TrainCameras[ii].T
         
@@ -170,10 +170,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         except:
             all_points = points
             all_colors = colors
-        
-        pcd = o3d.geometry.PointCloud()
-        pcd.points = o3d.utility.Vector3dVector(all_points)
-        o3d.visualization.draw_geometries([pcd])
+        # if ii % 100 ==0:
+        #     pcd = o3d.geometry.PointCloud()
+        #     pcd.points = o3d.utility.Vector3dVector(all_points)
+        #     o3d.visualization.draw_geometries([pcd])
         np.where(geo_mask == True)[0].shape[0] / (geo_mask.shape[0]* geo_mask.shape[1])
         print(f"{sorted_TrainCameras[ii].image_name}:pointcloud_processed end,{(np.where(geo_mask == True)[0].shape[0] / (geo_mask.shape[0]* geo_mask.shape[1]) * 100 ):.3f}% saved")
 

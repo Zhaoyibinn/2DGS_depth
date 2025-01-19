@@ -23,6 +23,8 @@ from utils.general_utils import strip_symmetric, build_scaling_rotation
 
 from pytorch3d.transforms import matrix_to_quaternion,quaternion_to_matrix
 
+import math
+
 class GaussianModel:
 
     def setup_functions(self):
@@ -45,6 +47,9 @@ class GaussianModel:
 
     def __init__(self, sh_degree : int):
         self.extra_trans = torch.empty(0)
+
+        self.blur_kernal = torch.empty(0)
+        self.blur_camera_vector = torch.empty(0)
         
         self.active_sh_degree = 0
         self.max_sh_degree = sh_degree  
@@ -168,6 +173,8 @@ class GaussianModel:
 
         # points_num = fused_point_cloud.shape[0]
         self.init_extra_pose()
+        self.init_blur()
+
         self._xyz = nn.Parameter(fused_point_cloud.requires_grad_(True))
         self._features_dc = nn.Parameter(features[:,:,0:1].transpose(1, 2).contiguous().requires_grad_(True))
         self._features_rest = nn.Parameter(features[:,:,1:].transpose(1, 2).contiguous().requires_grad_(True))
@@ -196,7 +203,8 @@ class GaussianModel:
             {'params': [self._opacity], 'lr': training_args.opacity_lr, "name": "opacity"},
             {'params': [self._scaling], 'lr': training_args.scaling_lr, "name": "scaling"},
             {'params': [self._rotation], 'lr': training_args.rotation_lr, "name": "rotation"},
-            {'params': [self.extra_trans], 'lr': 0, "name": "extra_trans"}
+            {'params': [self.extra_trans], 'lr': 0, "name": "extra_trans"},
+            {'params': [self.blur_camera_vector], 'lr': 0, "name": "blur_camera_vector"}
         ]
 
         self.optimizer = torch.optim.Adam(l, lr=0.0, eps=1e-15)
@@ -205,7 +213,12 @@ class GaussianModel:
                                                     lr_delay_mult=training_args.position_lr_delay_mult,
                                                     max_steps=training_args.position_lr_max_steps)
         self.extra_trans_scheduler_args = get_expon_lr_func(lr_init=1e-5,
-                                                    lr_final=1e-5,
+                                                    lr_final=2e-5,
+                                                    lr_delay_steps = 7000,
+                                                    lr_delay_mult=0.5,
+                                                    max_steps=training_args.position_lr_max_steps)
+        self.blur_camera_vector_scheduler_args = get_expon_lr_func(lr_init=1e-5,
+                                                    lr_final=1e-4,
                                                     lr_delay_steps = 10000,
                                                     lr_delay_mult=0.5,
                                                     max_steps=training_args.position_lr_max_steps)
@@ -216,7 +229,7 @@ class GaussianModel:
             if param_group["name"] == "xyz":
                 lr = self.xyz_scheduler_args(iteration)
                 param_group['lr'] = lr
-            if param_group["name"] == "extra_trans":
+            elif param_group["name"] == "extra_trans":
                 lr = self.extra_trans_scheduler_args(iteration)
                 # print("extra_trans",lr)
                 if args.extra_pose:
@@ -224,7 +237,17 @@ class GaussianModel:
                 else:
                     param_group['lr'] = 0.0
                 
-                return lr
+                # return lr
+            elif param_group["name"] == "blur_camera_vector":
+                lr = self.blur_camera_vector_scheduler_args(iteration)
+                # print("extra_trans",lr)
+                if args.blur:
+                    param_group['lr'] = lr
+                else:
+                    param_group['lr'] = 0.0
+                
+                # return lr
+
 
     def construct_list_of_attributes(self):
         l = ['x', 'y', 'z', 'nx', 'ny', 'nz']
@@ -320,6 +343,24 @@ class GaussianModel:
         identity_matrices = identity_matrix.unsqueeze(0).repeat(self.cameras_idx_max + 1, 1, 1).cuda()
         self.extra_trans = nn.Parameter(identity_matrices.requires_grad_(True))
 
+    def init_blur(self,kernal_size = 5):
+
+        zero_matrix = torch.zeros((kernal_size,kernal_size))
+        center = math.floor(kernal_size / 2)
+
+        init_kernal = zero_matrix
+        init_kernal[center][center] = 1
+
+        init_kernals = init_kernal.unsqueeze(0).repeat(self.cameras_idx_max + 1, 1, 1).cuda()
+        self.blur_kernal = nn.Parameter(init_kernals.requires_grad_(True))
+        
+        
+        zero_vector = torch.tensor([0.0,1.0,0.0])
+        zero_vectors = zero_vector.unsqueeze(0).repeat(self.cameras_idx_max + 1, 1).cuda()
+        self.blur_camera_vector = nn.Parameter(zero_vectors.requires_grad_(True))
+
+
+
     def replace_tensor_to_optimizer(self, tensor, name):
         optimizable_tensors = {}
         for group in self.optimizer.param_groups:
@@ -338,7 +379,7 @@ class GaussianModel:
     def _prune_optimizer(self, mask):
         optimizable_tensors = {}
         for group in self.optimizer.param_groups:
-            if group['name'] == "extra_trans":
+            if group['name'] == "extra_trans" or group['name'] == "blur_camera_vector":
                 continue
             stored_state = self.optimizer.state.get(group['params'][0], None)
             if stored_state is not None:
@@ -374,7 +415,7 @@ class GaussianModel:
     def cat_tensors_to_optimizer(self, tensors_dict):
         optimizable_tensors = {}
         for group in self.optimizer.param_groups:
-            if group['name'] == "extra_trans":
+            if group['name'] == "extra_trans" or group['name'] == "blur_camera_vector":
                 continue
             assert len(group["params"]) == 1
             extension_tensor = tensors_dict[group["name"]]

@@ -50,7 +50,7 @@ except ImportError:
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint,args):
     first_iter = 0
 
-    depth_scale = 5000
+    depth_scale = 6553.5
 
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
@@ -294,7 +294,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 tb_writer.add_scalar('train_loss_patches/normal_loss', ema_normal_for_log, iteration)
                 tb_writer.add_scalar('train_loss_patches/depth_loss', ema_Ll1_depth_for_log, iteration)
                 tb_writer.add_scalar('train_loss_patches/l1_loss', ema_loss_for_log, iteration)
-                tb_writer.add_scalar('train_loss_patches/s3im_loss', ema_s3im_for_log, iteration)
+                tb_writer.add_scalar('train_loss_patches/s3im_loss', ema_s3im_for_log, iteration)   
 
             training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background),args)
             if (iteration in saving_iterations):
@@ -383,7 +383,7 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
     if iteration in testing_iterations:
         torch.cuda.empty_cache()
         validation_configs = ({'name': 'test', 'cameras' : scene.getTestCameras()}, 
-                              {'name': 'train', 'cameras' : [scene.getTrainCameras()[idx % len(scene.getTrainCameras())] for idx in range(5, 30, 5)]})
+                              {'name': 'train', 'cameras' : scene.getTrainCameras()})
 
         for config in validation_configs:
             if config['cameras'] and len(config['cameras']) > 0:
@@ -435,6 +435,7 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
                 if tb_writer:
                     tb_writer.add_scalar(config['name'] + '/loss_viewpoint - l1_loss', l1_test, iteration)
                     tb_writer.add_scalar(config['name'] + '/loss_viewpoint - psnr', psnr_test, iteration)
+                    tb_writer.add_scalar(config['name'] + '/loss_viewpoint - ssim', ssim_test, iteration)
 
         torch.cuda.empty_cache()
 

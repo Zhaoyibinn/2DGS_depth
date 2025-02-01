@@ -15,3 +15,5 @@ eval
 **/tmp
 submodules/*
 zybtools/torch_kdtree
+results
+vis

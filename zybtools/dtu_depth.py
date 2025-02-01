@@ -4,8 +4,8 @@ import numpy as np
 import struct
 import cv2
 
-depth_root = "data/scan24/origin_depth"
-depth_img_names = os.listdir(depth_root)
+# depth_root = "data/scan24/origin_depth"
+# depth_img_names = os.listdir(depth_root)
 
 
 def read_pfm(filename):

@@ -113,7 +113,8 @@ class GaussianModel:
     
     def get_extratrans_rotation(self,idx):
         extra_tran = self.extra_trans[idx]
-        R = extra_tran[:3,:3]
+        # R = extra_tran[:3,:3]
+        R = torch.eye(3).cuda()
         t = extra_tran[:3,3]
         q = self.rotation_activation(self._rotation)
 
@@ -131,7 +132,8 @@ class GaussianModel:
     def get_extratrans_xyz(self,idx):
         # 每个视角的位姿都可以被优化了
         extra_tran = self.extra_trans[idx]
-        R = extra_tran[:3,:3]
+        # R = extra_tran[:3,:3]
+        R = torch.eye(3).cuda()
         t = extra_tran[:3,3]
         xyz = self._xyz
 

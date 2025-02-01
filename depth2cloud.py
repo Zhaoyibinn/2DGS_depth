@@ -49,7 +49,7 @@ def cameras_trans(camera):
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint):
     first_iter = 0
 
-    depth_scale = 5000
+    depth_scale = 6553.5
 
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
@@ -123,8 +123,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     #     print(f"{camera.image_name}:pointcloud_processed end")
     
     for ii in range(sorted_TrainCameras.__len__()):
-        
-        range_num = 1
+        # 需要过滤的话就修改range_num
+        range_num = 0
         ref_tart = max(0, ii - range_num)
         ref_end = min(sorted_TrainCameras.__len__()-1, ii + range_num)
         ref_idxs = list(range(ref_tart, ref_end + 1))
@@ -156,13 +156,47 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         RGB = sorted_TrainCameras[ii].original_image
         depth = sorted_TrainCameras[ii].depth
         
-        # depth[~torch.tensor(geo_mask)] = 0
 
+        # points, colors, z_values, trackable_filter = downsample_and_make_pointcloud2(np.array(depth.cpu().detach()), np.transpose(np.array(RGB.cpu().detach()),(1,2,0)),[fx ,fy ,cx ,cy],depth_scale)
+        
+        # points = np.matmul(R, points.transpose()).transpose() - np.matmul(R, T)
+
+        # pcd = o3d.geometry.PointCloud()
+        # pcd.points = o3d.utility.Vector3dVector(points)  # 设置点云坐标
+        # pcd.colors = o3d.utility.Vector3dVector(colors)  # 设置颜色[^1^][^3^]
+        # o3d.io.write_point_cloud(f"vis/pcd_{ii}.pcd", pcd)
+
+        # plt.imshow(depth)
+        # plt.savefig(f"vis/depth_{ii}.png", dpi=600)
+
+
+
+
+        
+        # depth[~torch.tensor(geo_mask)] = 0
+        # geo_mask[depth==0] = 0
+        # 需要过滤的话这里取消注释
+
+
+
+
+        # plt.imshow(geo_mask, cmap='gray')
+        # plt.savefig(f"vis/geo_mask_{ii}.png", dpi=600)
+
+        # plt.imshow(depth)
+        # plt.savefig(f"vis/filtered_depth_{ii}.png", dpi=600)
 
 
         points, colors, z_values, trackable_filter = downsample_and_make_pointcloud2(np.array(depth.cpu().detach()), np.transpose(np.array(RGB.cpu().detach()),(1,2,0)),[fx ,fy ,cx ,cy],depth_scale)
         
         points = np.matmul(R, points.transpose()).transpose() - np.matmul(R, T)
+
+        # pcd = o3d.geometry.PointCloud()
+        # pcd.points = o3d.utility.Vector3dVector(points)  # 设置点云坐标
+        # pcd.colors = o3d.utility.Vector3dVector(colors)  # 设置颜色[^1^][^3^]
+        # o3d.visualization.draw_geometries([pcd])
+        # o3d.io.write_point_cloud(f"vis/filtered_pcd_{ii}.pcd", pcd)
+
 
         try:
             all_points = np.concatenate((all_points, points), axis=0)
@@ -174,8 +208,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         #     pcd = o3d.geometry.PointCloud()
         #     pcd.points = o3d.utility.Vector3dVector(all_points)
         #     o3d.visualization.draw_geometries([pcd])
-        np.where(geo_mask == True)[0].shape[0] / (geo_mask.shape[0]* geo_mask.shape[1])
-        print(f"{sorted_TrainCameras[ii].image_name}:pointcloud_processed end,{(np.where(geo_mask == True)[0].shape[0] / (geo_mask.shape[0]* geo_mask.shape[1]) * 100 ):.3f}% saved")
+        # np.where(geo_mask == True)[0].shape[0] / (geo_mask.shape[0]* geo_mask.shape[1])
+        # print(f"{sorted_TrainCameras[ii].image_name}:pointcloud_processed end,{(np.where(geo_mask == True)[0].shape[0] / (geo_mask.shape[0]* geo_mask.shape[1]) * 100 ):.3f}% saved")
+        print(f"{ii}_processed, shape: {all_points.shape}")
 
 
 

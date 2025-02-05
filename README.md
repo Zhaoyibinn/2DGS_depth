@@ -13,3 +13,5 @@ forker from https://github.com/hbb1/2d-gaussian-splatting
 
 5. 加入位姿额外优化（参考Splatam）和深度图云初始化点几何一致性检查（参考MVSGaussian）（位姿额外优化的lr还需仔细调整）
 
+## 环境
+pip install git+https://github.com/patrick-kidger/torchcubicspline.git

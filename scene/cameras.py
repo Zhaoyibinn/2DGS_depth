@@ -37,11 +37,19 @@ class Camera(nn.Module):
             self.data_device = torch.device("cuda")
 
         # self.original_image = image.clamp(0.0, 1.0).to(self.data_device)
-        self.original_image = image.clamp(0.0, 1.0)
-        self.image_width = self.original_image.shape[2]
-        self.image_height = self.original_image.shape[1]
+        
+        try:
+            self.original_image = image.clamp(0.0, 1.0)
+            self.image_width = self.original_image.shape[2]
+            self.image_height = self.original_image.shape[1]
 
-        self.depth = depth
+            self.depth = depth
+        except:
+            self.original_image = None
+            self.image_width = None
+            self.image_height = None
+
+            self.depth = None
 
 
 

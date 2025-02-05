@@ -16,7 +16,7 @@ from utils.system_utils import searchForMaxIteration
 from scene.dataset_readers import sceneLoadTypeCallbacks
 from scene.gaussian_model import GaussianModel
 from arguments import ModelParams
-from utils.camera_utils import cameraList_from_camInfos, camera_to_JSON
+from utils.camera_utils import cameraList_from_camInfos, camera_to_JSON, cameraList_from_camInfos_without_img
 
 import copy
 import numpy as np
@@ -49,24 +49,33 @@ class Scene:
 
         self.train_cameras = {}
         self.test_cameras = {}
+        self.train_cameras_gt = {}
 
         if os.path.exists(os.path.join(args.source_path, "sparse")):
-            scene_info = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, args.eval)
+            scene_info,scene_info_gt = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, args.eval)
         elif os.path.exists(os.path.join(args.source_path, "transforms_train.json")):
             print("Found transforms_train.json file, assuming Blender data set!")
             scene_info = sceneLoadTypeCallbacks["Blender"](args.source_path, args.white_background, args.eval)
         else:
             assert False, "Could not recognize scene type!"
 
+        # 这里的sence info。t和colmap对齐（C2W），R和colmap相反（W2C）
+
         if not self.loaded_iter:
             with open(scene_info.ply_path, 'rb') as src_file, open(os.path.join(self.model_path, "input.ply") , 'wb') as dest_file:
                 dest_file.write(src_file.read())
             json_cams = []
             camlist = []
+            camlist_gt = []
             if scene_info.test_cameras:
                 camlist.extend(scene_info.test_cameras)
             if scene_info.train_cameras:
                 camlist.extend(scene_info.train_cameras)
+
+            if scene_info_gt.train_cameras:
+                camlist_gt.extend(scene_info.train_cameras)
+
+
             for id, cam in enumerate(camlist):
                 json_cams.append(camera_to_JSON(id, cam))
             with open(os.path.join(self.model_path, "cameras.json"), 'w') as file:
@@ -89,6 +98,8 @@ class Scene:
             self.train_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.train_cameras, resolution_scale, args)
             print("Loading Test Cameras")
             self.test_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.test_cameras, resolution_scale, args)
+
+            self.train_cameras_gt[resolution_scale] = cameraList_from_camInfos_without_img(scene_info_gt.train_cameras, resolution_scale, args)
         
         train_max = max(int(camera.image_name) for camera in self.train_cameras[1])
         test_max = max(int(camera.image_name) for camera in self.test_cameras[1])
@@ -124,6 +135,20 @@ class Scene:
             cameras_3[i].camera_center = cameras_3[i].world_view_transform.inverse()[3, :3]
         
         return cameras_3
+    
+    def init_new_camera(origin_camera,more_poses):
+        new_camera = copy.deepcopy(origin_camera)
+        # cameras_3 = [before_camera,origin_camera,after_camera]
+        more_poses = torch.inverse(more_poses)
+        R = more_poses[:3,:3]
+        R = R.transpose(1,0)
+        t = more_poses[:3,3]
+        
+        new_camera.world_view_transform = torch.tensor(getWorld2View2(R, t)).transpose(0, 1).cuda()
+        new_camera.full_proj_transform = (new_camera.world_view_transform.unsqueeze(0).bmm(new_camera.projection_matrix.unsqueeze(0))).squeeze(0)
+        new_camera.camera_center = new_camera.world_view_transform.inverse()[3, :3]
+        
+        return new_camera
     
     def scene2mask(self):
         self.gaussians._features_rest.zero_()

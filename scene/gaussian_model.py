@@ -50,6 +50,8 @@ class GaussianModel:
 
         self.blur_kernal = torch.empty(0)
         self.blur_camera_vector = torch.empty(0)
+
+        self.bayes_poses = torch.empty(0)
         
         self.active_sh_degree = 0
         self.max_sh_degree = sh_degree  
@@ -68,6 +70,17 @@ class GaussianModel:
         self.setup_functions()
 
         self.cameras_idx_max = 0
+
+
+
+
+    def cal_extra_trans(self,idx):
+        extra_trans = self.extra_trans
+        acc_extra_trans = extra_trans[0]
+        if idx !=0:
+            for i in range(1,idx+1):
+                acc_extra_trans = self.extra_trans[i] @ acc_extra_trans
+        return acc_extra_trans
 
     def capture(self):
         return (
@@ -113,8 +126,12 @@ class GaussianModel:
     
     def get_extratrans_rotation(self,idx):
         extra_tran = self.extra_trans[idx]
-        # R = extra_tran[:3,:3]
-        R = torch.eye(3).cuda()
+        # extra_tran = self.cal_extra_trans(idx)
+        R = extra_tran[:3,:3]
+        # R = torch.eye(3).cuda()
+
+        # t = torch.zeros_like(extra_tran[:3,3])
+        # t[0] = extra_tran[:3,3][0]
         t = extra_tran[:3,3]
         q = self.rotation_activation(self._rotation)
 
@@ -131,10 +148,15 @@ class GaussianModel:
 
     def get_extratrans_xyz(self,idx):
         # 每个视角的位姿都可以被优化了
+        # extra_tran = self.cal_extra_trans(idx)
         extra_tran = self.extra_trans[idx]
-        # R = extra_tran[:3,:3]
-        R = torch.eye(3).cuda()
+        R = extra_tran[:3,:3]
+        # R = torch.eye(3).cuda()
+
+        # t = torch.zeros_like(extra_tran[:3,3])
+        # t[0] = extra_tran[:3,3][0]
         t = extra_tran[:3,3]
+
         xyz = self._xyz
 
         return (R @ xyz.T + t.unsqueeze(1)).T
@@ -176,6 +198,7 @@ class GaussianModel:
         # points_num = fused_point_cloud.shape[0]
         self.init_extra_pose()
         self.init_blur()
+        self.init_bayes_poses()
 
         self._xyz = nn.Parameter(fused_point_cloud.requires_grad_(True))
         self._features_dc = nn.Parameter(features[:,:,0:1].transpose(1, 2).contiguous().requires_grad_(True))
@@ -184,6 +207,7 @@ class GaussianModel:
         self._rotation = nn.Parameter(rots.requires_grad_(True))
         self._opacity = nn.Parameter(opacities.requires_grad_(True))
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
+        
 
     def training_setup(self, training_args):
         self.percent_dense = training_args.percent_dense
@@ -206,7 +230,9 @@ class GaussianModel:
             {'params': [self._scaling], 'lr': training_args.scaling_lr, "name": "scaling"},
             {'params': [self._rotation], 'lr': training_args.rotation_lr, "name": "rotation"},
             {'params': [self.extra_trans], 'lr': 0, "name": "extra_trans"},
-            {'params': [self.blur_camera_vector], 'lr': 0, "name": "blur_camera_vector"}
+            {'params': [self.blur_camera_vector], 'lr': 0, "name": "blur_camera_vector"},
+            {'params': [self.bayes_poses], 'lr': 0, "name": "bayes_poses"}
+            
         ]
 
         self.optimizer = torch.optim.Adam(l, lr=0.0, eps=1e-15)
@@ -214,9 +240,19 @@ class GaussianModel:
                                                     lr_final=training_args.position_lr_final*self.spatial_lr_scale,
                                                     lr_delay_mult=training_args.position_lr_delay_mult,
                                                     max_steps=training_args.position_lr_max_steps)
-        self.extra_trans_scheduler_args = get_expon_lr_func(lr_init=1e-5,
-                                                    lr_final=2e-5,
-                                                    lr_delay_steps = 7000,
+        # self.extra_trans_scheduler_args = get_expon_lr_func(lr_init=2e-5,
+        #                                             lr_final=4e-5,
+        #                                             lr_delay_steps = 7000,
+        #                                             lr_delay_mult=0.5,
+        #                                             max_steps=training_args.position_lr_max_steps)
+        self.bayes_poses_scheduler_args = get_expon_lr_func(lr_init=2e-5,
+                                                    lr_final=4e-5,
+                                                    lr_delay_steps = 10000,
+                                                    lr_delay_mult=0.5,
+                                                    max_steps=training_args.position_lr_max_steps)
+        self.extra_trans_scheduler_args = get_expon_lr_func(lr_init=2e-5,
+                                                    lr_final=4e-5,
+                                                    lr_delay_steps = 10000,
                                                     lr_delay_mult=0.5,
                                                     max_steps=training_args.position_lr_max_steps)
         self.blur_camera_vector_scheduler_args = get_expon_lr_func(lr_init=1e-5,
@@ -242,6 +278,14 @@ class GaussianModel:
                 # return lr
             elif param_group["name"] == "blur_camera_vector":
                 lr = self.blur_camera_vector_scheduler_args(iteration)
+                # print("extra_trans",lr)
+                if args.blur:
+                    param_group['lr'] = lr
+                else:
+                    param_group['lr'] = 0.0
+                    
+            elif param_group["name"] == "bayes_poses":
+                lr = self.extra_trans_scheduler_args(iteration)
                 # print("extra_trans",lr)
                 if args.blur:
                     param_group['lr'] = lr
@@ -345,6 +389,14 @@ class GaussianModel:
         identity_matrices = identity_matrix.unsqueeze(0).repeat(self.cameras_idx_max + 1, 1, 1).cuda()
         self.extra_trans = nn.Parameter(identity_matrices.requires_grad_(True))
 
+    def init_bayes_poses(self):
+        init_bayes_pose = torch.tensor(0.0)
+        init_bayes_poses = init_bayes_pose.repeat(self.cameras_idx_max + 1)
+        self.bayes_poses = nn.Parameter(init_bayes_poses.requires_grad_(True))
+
+    def activate_bayes_poses(self,idx):
+        return (torch.sigmoid(self.bayes_poses[idx])-0.5) * 2
+    
     def init_blur(self,kernal_size = 5):
 
         zero_matrix = torch.zeros((kernal_size,kernal_size))

@@ -49,7 +49,8 @@ def cameras_trans(camera):
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint):
     first_iter = 0
 
-    depth_scale = 6553.5
+    # depth_scale = 6553.5
+    depth_scale = 5000
 
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
@@ -219,7 +220,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     pcd.points = o3d.utility.Vector3dVector(all_points)
     pcd.colors = o3d.utility.Vector3dVector(all_colors)
     
-    pcd = pcd.voxel_down_sample(voxel_size=0.01)
+    # pcd = pcd.voxel_down_sample(voxel_size=0.01)
     o3d.visualization.draw_geometries([pcd])
     o3d.io.write_point_cloud("test_fusion.ply", pcd)
     exit()

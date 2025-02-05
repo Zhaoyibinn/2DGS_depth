@@ -34,6 +34,7 @@ import open3d as o3d
 from extra_models.curv_opt import curv_loss
 from extra_models.high_filter_opt import high_filter
 from extra_models.blur_train.blur import Bayes_fit,mix_pic
+from extra_models.vis_zyb import vis_pose_error
 import torch.optim as optim
 import time
 
@@ -50,7 +51,8 @@ except ImportError:
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint,args):
     first_iter = 0
 
-    depth_scale = 6553.5
+    # depth_scale = 6553.5
+    depth_scale = 5000
 
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
@@ -86,8 +88,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
 
 
+    trajectory_img = vis_pose_error(scene.train_cameras,scene.train_cameras_gt)
     
     for iteration in range(first_iter, opt.iterations + 1):        
+        # gaussians.update_trans()
+
 
         iter_start.record()
 
@@ -107,7 +112,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             camera_sel_range = list(range(viewpoint_stack.__len__()))
 
         camera_sel = camera_sel_range.pop(randint(0, len(camera_sel_range)-1))
+        # camera_sel = camera_sel_range.pop(0)
         viewpoint_cam = viewpoint_stack[camera_sel]
+
+
         
         # viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1))
         # viewpoint_cam = viewpoint_stack.pop(0)
@@ -120,9 +128,19 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             before_viewpoint_cam = viewpoint_stack[max(camera_sel-1,0)]
             after_viewpoint_cam = viewpoint_stack[min(camera_sel+1,viewpoint_stack.__len__() - 1)]
             # start = time.time()
-            Bayes_pose = Bayes_fit([before_viewpoint_cam,viewpoint_cam,after_viewpoint_cam],vis=False)
-            cameras_3 = Scene.init_new_cameras(viewpoint_cam,Bayes_pose)
+            Bayes_pose = Bayes_fit([before_viewpoint_cam,viewpoint_cam,after_viewpoint_cam],gaussians.activate_bayes_poses(camera_sel),vis=False)
+            cameras_3 = Scene.init_new_camera(viewpoint_cam,Bayes_pose)
             # print("bayes time=",time.time() - start)
+
+
+
+
+
+
+
+
+
+
             render_pkg_before = render(cameras_3[0], gaussians, pipe, background)
             render_pkg_current = render(cameras_3[1], gaussians, pipe, background)
             render_pkg_after = render(cameras_3[2], gaussians, pipe, background)
@@ -145,12 +163,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
 
 
-            # render_pkg = render(viewpoint_cam, gaussians, pipe, background)
-            # image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
-            # depth = render_pkg['surf_depth']
-            # rend_dist = render_pkg["rend_dist"]
-            # rend_normal  = render_pkg['rend_normal']
-            # surf_normal = render_pkg['surf_normal']
+
 
 
 
@@ -207,8 +220,17 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         points_3d = np.array(gaussians.get_extratrans_xyz(int(viewpoint_cam.image_name)).cpu().detach())
 
-        if rerun_viewer and (int(viewpoint_cam.image_name) == 519 or iteration%100 == 0):
-        # if rerun_viewer and iteration%100 == 0:
+        # if rerun_viewer and (int(viewpoint_cam.image_name) == 519 or iteration%100 == 0):
+        if rerun_viewer and iteration%100 == 0:
+            # acc_extra_trans = []
+            # for extra_tran_idx in range(gaussians.extra_trans.shape[0]):
+            #     acc_extra_tran = gaussians.cal_extra_trans(extra_tran_idx)
+            #     acc_extra_trans.append(acc_extra_tran)
+            # acc_extra_trans = torch.stack(acc_extra_trans)
+            if iteration%5000 == 0:
+                trajectory_img = vis_pose_error(scene.train_cameras,scene.train_cameras_gt,extra_trans = gaussians.extra_trans,logate=True)
+            else:
+                trajectory_img = vis_pose_error(scene.train_cameras,scene.train_cameras_gt,extra_trans = gaussians.extra_trans)
             rr.set_time_sequence("step", iteration)
             # print("gaussians.extra_trans[519]:",gaussians.extra_trans[519])
             rr.log(f"pt/trackable", rr.Points3D(points_3d[::5,:], radii=0.01))
@@ -223,6 +245,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             depth_vis[depth_vis>1] = 1
             rr.log(f"images/trackable/render_depth",rr.Image(np.array(depth_vis.cpu().detach())))
             rr.log(f"images/trackable/render_depth_gt",rr.Image(np.array(scaled_gt_depth_vis.cpu().detach())))
+
+            rr.log(f"images/traj_vis",rr.Image(np.array(trajectory_img)))
 
         
 

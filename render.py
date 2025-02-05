@@ -23,6 +23,9 @@ from gaussian_renderer import GaussianModel
 from utils.mesh_utils import GaussianExtractor, to_cam_open3d, post_process_mesh
 from utils.render_utils import generate_path, create_videos
 
+from extra_models.vis_zyb import vis_pose_error
+import matplotlib.pyplot as plt
+
 import open3d as o3d
 
 if __name__ == "__main__":
@@ -54,8 +57,13 @@ if __name__ == "__main__":
     
     train_dir = os.path.join(args.model_path, 'train', "ours_{}".format(scene.loaded_iter))
     test_dir = os.path.join(args.model_path, 'test', "ours_{}".format(scene.loaded_iter))
-    gaussExtractor = GaussianExtractor(gaussians, render, pipe, bg_color=bg_color)    
-    
+    gaussExtractor = GaussianExtractor(gaussians, render, pipe, bg_color=bg_color) 
+
+    img_array = vis_pose_error(scene.train_cameras,scene.train_cameras_gt,extra_trans = gaussians.extra_trans,logate=True)       
+    plt.clf()
+    plt.imshow(img_array)
+    plt.show()
+
     if not args.skip_train:
         print("export training images ...")
         os.makedirs(train_dir, exist_ok=True)

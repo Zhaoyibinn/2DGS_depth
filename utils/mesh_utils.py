@@ -20,7 +20,7 @@ import open3d as o3d
 import trimesh
 import cv2
 import matplotlib
-matplotlib.use('TKAgg')
+# matplotlib.use('TKAgg')
 import matplotlib.pyplot as plt
 
 

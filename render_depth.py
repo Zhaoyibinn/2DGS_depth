@@ -23,6 +23,8 @@ from gaussian_renderer import GaussianModel
 from utils.mesh_utils import GaussianExtractor, to_cam_open3d, post_process_mesh
 from utils.render_utils import generate_path, create_videos
 
+from extra_models.vis_zyb import vis_pose_error
+
 import open3d as o3d
 
 if __name__ == "__main__":
@@ -54,34 +56,39 @@ if __name__ == "__main__":
     
     train_dir = os.path.join(args.model_path, 'train', "ours_{}".format(scene.loaded_iter))
     test_dir = os.path.join(args.model_path, 'test', "ours_{}".format(scene.loaded_iter))
-    gaussExtractor = GaussianExtractor(gaussians, render, pipe, bg_color=bg_color)    
+    gaussExtractor = GaussianExtractor(gaussians, render, pipe, bg_color=bg_color)
+
+
+
     
-    # if not args.skip_train:
-    #     print("export training images ...")
-    #     os.makedirs(train_dir, exist_ok=True)
-    #     gaussExtractor.reconstruction(scene.getTrainCameras())
-    #     gaussExtractor.export_image(train_dir)
+    vis_pose_error(scene.train_cameras,scene.train_cameras_gt,extra_trans = gaussians.extra_trans)    
+    
+    if not args.skip_train:
+        print("export training images ...")
+        os.makedirs(train_dir, exist_ok=True)
+        gaussExtractor.reconstruction(scene.getTrainCameras())
+        gaussExtractor.export_image(train_dir)
         
     
-    # if (not args.skip_test) and (len(scene.getTestCameras()) > 0):
-    #     print("export rendered testing images ...")
-    #     os.makedirs(test_dir, exist_ok=True)
-    #     gaussExtractor.reconstruction(scene.getTestCameras())
-    #     gaussExtractor.export_image(test_dir)
+    if (not args.skip_test) and (len(scene.getTestCameras()) > 0):
+        print("export rendered testing images ...")
+        os.makedirs(test_dir, exist_ok=True)
+        gaussExtractor.reconstruction(scene.getTestCameras())
+        gaussExtractor.export_image(test_dir)
     
     
-    # if args.render_path:
-    #     print("render videos ...")
-    #     traj_dir = os.path.join(args.model_path, 'traj', "ours_{}".format(scene.loaded_iter))
-    #     os.makedirs(traj_dir, exist_ok=True)
-    #     n_fames = 240
-    #     cam_traj = generate_path(scene.getTrainCameras(), n_frames=n_fames)
-    #     gaussExtractor.reconstruction(cam_traj)
-    #     gaussExtractor.export_image(traj_dir)
-    #     create_videos(base_dir=traj_dir,
-    #                 input_dir=traj_dir, 
-    #                 out_name='render_traj', 
-    #                 num_frames=n_fames)
+    if args.render_path:
+        print("render videos ...")
+        traj_dir = os.path.join(args.model_path, 'traj', "ours_{}".format(scene.loaded_iter))
+        os.makedirs(traj_dir, exist_ok=True)
+        n_fames = 240
+        cam_traj = generate_path(scene.getTrainCameras(), n_frames=n_fames)
+        gaussExtractor.reconstruction(cam_traj)
+        gaussExtractor.export_image(traj_dir)
+        create_videos(base_dir=traj_dir,
+                    input_dir=traj_dir, 
+                    out_name='render_traj', 
+                    num_frames=n_fames)
 
     if not args.skip_mesh:
         print("export mesh ...")

@@ -1,8 +1,8 @@
 import open3d as o3d
 import numpy as np
 
-in_path = "/home/zhaoyibin/3DRE/3DGS/2d-gaussian-splatting/data/replica/office1/sparse/0/points3D_depth.ply"
-out_path = "/home/zhaoyibin/3DRE/3DGS/2d-gaussian-splatting/data/replica/office1/sparse/0/points3D_depth_down.ply"
+in_path = "/home/zhaoyibin/3DRE/3DGS/2d-gaussian-splatting/data/tum/rgbd_dataset_freiburg1_desk_back/sparse/0/points3D_depth.ply"
+out_path = "/home/zhaoyibin/3DRE/3DGS/2d-gaussian-splatting/data/tum/rgbd_dataset_freiburg1_desk_back/sparse/0/points3D_depth_down.ply"
 # 读取PLY文件
 pcd = o3d.io.read_point_cloud(in_path)
 

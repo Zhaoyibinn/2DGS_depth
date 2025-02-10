@@ -42,6 +42,8 @@ import matplotlib.pyplot as plt
 
 from  extra_models.S3IM.s3im import S3IM
 
+import cv2
+
 try:
     from torch.utils.tensorboard import SummaryWriter
     TENSORBOARD_FOUND = True
@@ -52,7 +54,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     first_iter = 0
 
     # depth_scale = 6553.5
+    # replica
+
     depth_scale = 5000
+    # tum
 
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
@@ -220,6 +225,18 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         points_3d = np.array(gaussians.get_extratrans_xyz(int(viewpoint_cam.image_name)).cpu().detach())
 
+
+        if iteration%100==0:
+            if iteration%5000 == 0:
+                trajectory_img = vis_pose_error(scene.train_cameras,scene.train_cameras_gt,extra_trans = gaussians.extra_trans,logate=True)
+                cv2.imwrite(f"vis/vis_{iteration}.png",trajectory_img)
+            else:
+                trajectory_img = vis_pose_error(scene.train_cameras,scene.train_cameras_gt,extra_trans = gaussians.extra_trans)
+                
+                model_name = scene.model_path.split("/")[-1]
+                if not os.path.exists(f"vis/{model_name}"):
+                    os.makedirs(f"vis/{model_name}")
+                cv2.imwrite(f"vis/{model_name}/vis_{iteration}.png",trajectory_img)
         # if rerun_viewer and (int(viewpoint_cam.image_name) == 519 or iteration%100 == 0):
         if rerun_viewer and iteration%100 == 0:
             # acc_extra_trans = []
@@ -227,10 +244,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             #     acc_extra_tran = gaussians.cal_extra_trans(extra_tran_idx)
             #     acc_extra_trans.append(acc_extra_tran)
             # acc_extra_trans = torch.stack(acc_extra_trans)
-            if iteration%5000 == 0:
-                trajectory_img = vis_pose_error(scene.train_cameras,scene.train_cameras_gt,extra_trans = gaussians.extra_trans,logate=True)
-            else:
-                trajectory_img = vis_pose_error(scene.train_cameras,scene.train_cameras_gt,extra_trans = gaussians.extra_trans)
+
             rr.set_time_sequence("step", iteration)
             # print("gaussians.extra_trans[519]:",gaussians.extra_trans[519])
             rr.log(f"pt/trackable", rr.Points3D(points_3d[::5,:], radii=0.01))
@@ -475,7 +489,7 @@ if __name__ == "__main__":
     parser.add_argument("--test_iterations", nargs="+", type=int, default=[7_000, 30_000])
     parser.add_argument("--save_iterations", nargs="+", type=int, default=[7_000, 30_000])
     parser.add_argument("--quiet", action="store_true")
-    parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
+    parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[30000])
     parser.add_argument("--start_checkpoint", type=str, default = None)
 
     

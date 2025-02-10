@@ -26,6 +26,8 @@ from utils.render_utils import generate_path, create_videos
 from extra_models.vis_zyb import vis_pose_error
 import matplotlib.pyplot as plt
 
+from extra_models import eval_depth
+
 import open3d as o3d
 
 if __name__ == "__main__":
@@ -60,9 +62,9 @@ if __name__ == "__main__":
     gaussExtractor = GaussianExtractor(gaussians, render, pipe, bg_color=bg_color) 
 
     img_array = vis_pose_error(scene.train_cameras,scene.train_cameras_gt,extra_trans = gaussians.extra_trans,logate=True)       
-    plt.clf()
-    plt.imshow(img_array)
-    plt.show()
+    # plt.clf()
+    # plt.imshow(img_array)
+    # plt.show()
 
     if not args.skip_train:
         print("export training images ...")
@@ -70,20 +72,24 @@ if __name__ == "__main__":
         train_camera = scene.getTrainCameras()
         extra_trans = scene.gaussians.extra_trans
         idx_camera = 0
-        for camera in train_camera:
-            idx = int(camera.image_name)
-            extra_tran = torch.inverse(extra_trans[idx])
-            # extra_tran = extra_trans[idx]
+        # for camera in train_camera:
+        #     idx = int(camera.image_name)
+        #     extra_tran = torch.inverse(extra_trans[idx])
+        #     # extra_tran = extra_trans[idx]
 
-            trans_w2c = extra_tran @ torch.inverse((camera.world_view_transform).T)
-            camera.world_view_transform = torch.inverse(trans_w2c).T
+        #     trans_w2c = extra_tran @ torch.inverse((camera.world_view_transform).T)
+        #     camera.world_view_transform = torch.inverse(trans_w2c).T
             
-            # camera.world_view_transform = (extra_tran @ (camera.world_view_transform).T).T 
-            camera.full_proj_transform = camera.world_view_transform @ camera.projection_matrix
-            train_camera[idx_camera] = camera
-            idx_camera += 1
-        gaussExtractor.reconstruction(scene.getTrainCameras())
-        gaussExtractor.export_image(train_dir)
+        #     # camera.world_view_transform = (extra_tran @ (camera.world_view_transform).T).T 
+        #     camera.full_proj_transform = camera.world_view_transform @ camera.projection_matrix
+        #     train_camera[idx_camera] = camera
+        #     idx_camera += 1
+        #     # 注意这里不要跳过，计算了位姿的优化
+
+
+        # gaussExtractor.reconstruction(scene.getTrainCameras())
+        # gaussExtractor.reconstruction(train_camera)
+        # gaussExtractor.export_image(train_dir)
         
     
     if (not args.skip_test) and (len(scene.getTestCameras()) > 0):
@@ -112,6 +118,8 @@ if __name__ == "__main__":
         # set the active_sh to 0 to export only diffuse texture
         gaussExtractor.gaussians.active_sh_degree = 0
         gaussExtractor.reconstruction(scene.getTrainCameras())
+
+        eval_depth.eval_depth(gaussExtractor,scene.getTrainCameras())
         # extract the mesh and save
         if args.unbounded:
             name = 'fuse_unbounded.ply'

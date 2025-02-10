@@ -61,34 +61,34 @@ if __name__ == "__main__":
 
 
     
-    vis_pose_error(scene.train_cameras,scene.train_cameras_gt,extra_trans = gaussians.extra_trans)    
+    # vis_pose_error(scene.train_cameras,scene.train_cameras_gt,extra_trans = gaussians.extra_trans)    
     
-    if not args.skip_train:
-        print("export training images ...")
-        os.makedirs(train_dir, exist_ok=True)
-        gaussExtractor.reconstruction(scene.getTrainCameras())
-        gaussExtractor.export_image(train_dir)
+    # if not args.skip_train:
+    #     print("export training images ...")
+    #     os.makedirs(train_dir, exist_ok=True)
+    #     gaussExtractor.reconstruction(scene.getTrainCameras())
+    #     gaussExtractor.export_image(train_dir)
         
     
-    if (not args.skip_test) and (len(scene.getTestCameras()) > 0):
-        print("export rendered testing images ...")
-        os.makedirs(test_dir, exist_ok=True)
-        gaussExtractor.reconstruction(scene.getTestCameras())
-        gaussExtractor.export_image(test_dir)
+    # if (not args.skip_test) and (len(scene.getTestCameras()) > 0):
+    #     print("export rendered testing images ...")
+    #     os.makedirs(test_dir, exist_ok=True)
+    #     gaussExtractor.reconstruction(scene.getTestCameras())
+    #     gaussExtractor.export_image(test_dir)
     
     
-    if args.render_path:
-        print("render videos ...")
-        traj_dir = os.path.join(args.model_path, 'traj', "ours_{}".format(scene.loaded_iter))
-        os.makedirs(traj_dir, exist_ok=True)
-        n_fames = 240
-        cam_traj = generate_path(scene.getTrainCameras(), n_frames=n_fames)
-        gaussExtractor.reconstruction(cam_traj)
-        gaussExtractor.export_image(traj_dir)
-        create_videos(base_dir=traj_dir,
-                    input_dir=traj_dir, 
-                    out_name='render_traj', 
-                    num_frames=n_fames)
+    # if args.render_path:
+    #     print("render videos ...")
+    #     traj_dir = os.path.join(args.model_path, 'traj', "ours_{}".format(scene.loaded_iter))
+    #     os.makedirs(traj_dir, exist_ok=True)
+    #     n_fames = 240
+    #     cam_traj = generate_path(scene.getTrainCameras(), n_frames=n_fames)
+    #     gaussExtractor.reconstruction(cam_traj)
+    #     gaussExtractor.export_image(traj_dir)
+    #     create_videos(base_dir=traj_dir,
+    #                 input_dir=traj_dir, 
+    #                 out_name='render_traj', 
+    #                 num_frames=n_fames)
 
     if not args.skip_mesh:
         print("export mesh ...")
@@ -99,10 +99,10 @@ if __name__ == "__main__":
 
         # extract the mesh and save
         if args.unbounded:
-            name = 'fuse_unbounded.ply'
+            name = 'fuse_unbounded_depth.ply'
             mesh = gaussExtractor.extract_mesh_unbounded(resolution=args.mesh_res)
         else:
-            name = 'fuse.ply'
+            name = 'fuse_depth.ply'
             depth_trunc = (gaussExtractor.radius * 2.0) if args.depth_trunc < 0  else args.depth_trunc
             voxel_size = (depth_trunc / args.mesh_res) if args.voxel_size < 0 else args.voxel_size
             sdf_trunc = 5.0 * voxel_size if args.sdf_trunc < 0 else args.sdf_trunc

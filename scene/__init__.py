@@ -105,6 +105,11 @@ class Scene:
         test_max = max(int(camera.image_name) for camera in self.test_cameras[1])
         cameras_idx_max = max(train_max,test_max)
         self.gaussians.cameras_idx_max = cameras_idx_max
+
+
+
+
+
         if self.loaded_iter:
             self.gaussians.load_ply(os.path.join(self.model_path,
                                                            "point_cloud",
@@ -121,6 +126,12 @@ class Scene:
             
         else:
             self.gaussians.create_from_pcd(args,scene_info.point_cloud, self.cameras_extent)
+
+
+
+            # self.gaussians.load_extra_pose("results/test_eval/point_cloud/iteration_30000/extra_trans.pth")
+            # 记得删除
+
 
     def init_new_cameras(origin_camera,more_poses):
         after_camera ,before_camera = copy.deepcopy(origin_camera),copy.deepcopy(origin_camera)

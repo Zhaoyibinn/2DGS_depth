@@ -101,6 +101,7 @@ class GaussianExtractor(object):
         self.normals = []
         # self.depth_normals = []
         self.viewpoint_stack = []
+        self.image_name = []
 
     @torch.no_grad()
     def reconstruction(self, viewpoint_stack,gt = False):
@@ -111,13 +112,30 @@ class GaussianExtractor(object):
         self.viewpoint_stack = viewpoint_stack
         for i, viewpoint_cam in tqdm(enumerate(self.viewpoint_stack), desc="reconstruct radiance fields"):
             
-
-            render_pkg = self.render(viewpoint_cam, self.gaussians,no_extra_trans=True)
+            self.gaussians.active_sh_degree = 3
+            render_pkg = self.render(viewpoint_cam, self.gaussians,no_extra_trans=False)
+            # 在渲染的时候不需要反向传播，就正常了，转的是相机而非世界
             rgb = render_pkg['render']
             alpha = render_pkg['rend_alpha']
             normal = torch.nn.functional.normalize(render_pkg['rend_normal'], dim=0)
             if gt:
-                depth = (viewpoint_cam.depth / 5000).cuda().unsqueeze(0)
+                image_name = viewpoint_cam.image_name
+                depth_dir = "data/tum/rgbd_dataset_freiburg1_floor_colmap/depth_renamed"
+                depth_image_path = os.path.join(depth_dir ,image_name+".png")
+
+                depth = cv2.imread(depth_image_path,cv2.IMREAD_UNCHANGED)
+
+
+
+                scale = 1000
+                depth = torch.tensor(depth / scale).to(torch.float).cuda().unsqueeze(0)
+
+                # if depth.shape[0]==480:
+                #     scale = 5000
+                # else:
+                #     scale = 6553.5
+
+                # depth = (viewpoint_cam.depth / 5000).cuda().unsqueeze(0)
             else:
                 depth = render_pkg['surf_depth']
 
@@ -127,6 +145,7 @@ class GaussianExtractor(object):
             self.rgbmaps.append(rgb.cpu())
             self.depthmaps.append(depth.cpu())
             self.normals.append(normal.cpu())
+            self.image_name.append(viewpoint_cam.image_name)
             # self.alphamaps.append(alpha.cpu())
             # self.normals.append(normal.cpu())
             # self.depth_normals.append(depth_normal.cpu())

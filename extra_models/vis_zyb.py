@@ -77,7 +77,7 @@ def evaluate_ate(gt_traj, est_traj):
 
 def vis_pose_error(error_poses_cam,gt_poses_cam,extra_trans = None,logate = False):
 
-    fig, (ax1, ax2) = plt.subplots(2, 1,figsize=(8, 16)) 
+    fig, (ax1, ax2) = plt.subplots(2, 1,figsize=(15, 30)) 
     error_poses_np_R = np.array([pose.R  for pose in sorted(error_poses_cam[1.0],key=lambda x: int(x.image_name))])
     gt_poses_np_R = np.array([pose.R  for pose in sorted(gt_poses_cam[1.0],key=lambda x: int(x.image_name))])
 
@@ -160,6 +160,7 @@ def vis_pose_error(error_poses_cam,gt_poses_cam,extra_trans = None,logate = Fals
     ax1.set_title('xy')
     ax2.set_title('xz')
     plt.savefig('vis/trajectory.png', dpi=300)
+    plt.close()
     trajectory_img = cv2.imread('vis/trajectory.png')
 
     # plt.show()

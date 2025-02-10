@@ -230,8 +230,8 @@ class GaussianModel:
             {'params': [self._scaling], 'lr': training_args.scaling_lr, "name": "scaling"},
             {'params': [self._rotation], 'lr': training_args.rotation_lr, "name": "rotation"},
             {'params': [self.extra_trans], 'lr': 0, "name": "extra_trans"},
-            {'params': [self.blur_camera_vector], 'lr': 0, "name": "blur_camera_vector"},
-            {'params': [self.bayes_poses], 'lr': 0, "name": "bayes_poses"}
+            {'params': [self.blur_camera_vector], 'lr': 0, "name": "blur_camera_vector"}
+            # {'params': [self.bayes_poses], 'lr': 0, "name": "bayes_poses"}
             
         ]
 
@@ -245,16 +245,23 @@ class GaussianModel:
         #                                             lr_delay_steps = 7000,
         #                                             lr_delay_mult=0.5,
         #                                             max_steps=training_args.position_lr_max_steps)
+
+        self.extra_trans_scheduler_args = get_expon_lr_func(lr_init=1e-5,
+                                                    lr_final=2e-5,
+                                                    lr_delay_steps = 0,
+                                                    lr_delay_mult=0.5,
+                                                    max_steps=training_args.position_lr_max_steps)
+
+
+
+
+
         self.bayes_poses_scheduler_args = get_expon_lr_func(lr_init=2e-5,
                                                     lr_final=4e-5,
                                                     lr_delay_steps = 10000,
                                                     lr_delay_mult=0.5,
                                                     max_steps=training_args.position_lr_max_steps)
-        self.extra_trans_scheduler_args = get_expon_lr_func(lr_init=2e-5,
-                                                    lr_final=4e-5,
-                                                    lr_delay_steps = 10000,
-                                                    lr_delay_mult=0.5,
-                                                    max_steps=training_args.position_lr_max_steps)
+                                                    
         self.blur_camera_vector_scheduler_args = get_expon_lr_func(lr_init=1e-5,
                                                     lr_final=1e-4,
                                                     lr_delay_steps = 10000,

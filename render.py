@@ -61,7 +61,7 @@ if __name__ == "__main__":
     test_dir = os.path.join(args.model_path, 'test', "ours_{}".format(scene.loaded_iter))
     gaussExtractor = GaussianExtractor(gaussians, render, pipe, bg_color=bg_color) 
 
-    img_array = vis_pose_error(scene.train_cameras,scene.train_cameras_gt,extra_trans = gaussians.extra_trans,logate=True)       
+    # img_array = vis_pose_error(scene.train_cameras,scene.train_cameras_gt,extra_trans = gaussians.extra_trans,logate=True)       
     # plt.clf()
     # plt.imshow(img_array)
     # plt.show()
@@ -72,19 +72,19 @@ if __name__ == "__main__":
         train_camera = scene.getTrainCameras()
         extra_trans = scene.gaussians.extra_trans
         idx_camera = 0
-        # for camera in train_camera:
-        #     idx = int(camera.image_name)
-        #     extra_tran = torch.inverse(extra_trans[idx])
-        #     # extra_tran = extra_trans[idx]
+        for camera in train_camera:
+            idx = int(camera.image_name)
+            extra_tran = torch.inverse(extra_trans[idx])
+            # extra_tran = extra_trans[idx]
 
-        #     trans_w2c = extra_tran @ torch.inverse((camera.world_view_transform).T)
-        #     camera.world_view_transform = torch.inverse(trans_w2c).T
+            trans_w2c = extra_tran @ torch.inverse((camera.world_view_transform).T)
+            camera.world_view_transform = torch.inverse(trans_w2c).T
             
-        #     # camera.world_view_transform = (extra_tran @ (camera.world_view_transform).T).T 
-        #     camera.full_proj_transform = camera.world_view_transform @ camera.projection_matrix
-        #     train_camera[idx_camera] = camera
-        #     idx_camera += 1
-        #     # 注意这里不要跳过，计算了位姿的优化
+            # camera.world_view_transform = (extra_tran @ (camera.world_view_transform).T).T 
+            camera.full_proj_transform = camera.world_view_transform @ camera.projection_matrix
+            train_camera[idx_camera] = camera
+            idx_camera += 1
+            # 注意这里不要跳过，计算了位姿的优化
 
 
         # gaussExtractor.reconstruction(scene.getTrainCameras())
@@ -118,6 +118,7 @@ if __name__ == "__main__":
         # set the active_sh to 0 to export only diffuse texture
         gaussExtractor.gaussians.active_sh_degree = 0
         gaussExtractor.reconstruction(scene.getTrainCameras())
+        # gaussExtractor.export_image(train_dir)
 
         eval_depth.eval_depth(gaussExtractor,scene.getTrainCameras())
         # extract the mesh and save

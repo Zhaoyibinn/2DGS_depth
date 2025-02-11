@@ -113,7 +113,7 @@ class GaussianExtractor(object):
         for i, viewpoint_cam in tqdm(enumerate(self.viewpoint_stack), desc="reconstruct radiance fields"):
             
             self.gaussians.active_sh_degree = 3
-            render_pkg = self.render(viewpoint_cam, self.gaussians,no_extra_trans=False)
+            render_pkg = self.render(viewpoint_cam, self.gaussians,no_extra_trans=True)
             # 在渲染的时候不需要反向传播，就正常了，转的是相机而非世界
             rgb = render_pkg['render']
             alpha = render_pkg['rend_alpha']
@@ -142,6 +142,8 @@ class GaussianExtractor(object):
             
 
             depth_normal = render_pkg['surf_normal']
+
+            
             self.rgbmaps.append(rgb.cpu())
             self.depthmaps.append(depth.cpu())
             self.normals.append(normal.cpu())

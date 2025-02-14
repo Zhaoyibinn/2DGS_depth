@@ -29,6 +29,7 @@ def eval_depth(gaussExtractor,TrainCameras):
         depth_scale = 6553.5
 
     psnr_test_rgb = 0
+    ssim_test_rgb = 0
     L1_test_depth = 0
     ssim_test_depth = 0
     per_error_range = [5,10,20,30,50]
@@ -64,16 +65,20 @@ def eval_depth(gaussExtractor,TrainCameras):
         # axes[1].imshow(np.transpose(gt_rgb, (1, 2, 0)))
         
         psnr_test_rgb += psnr(rendered_rgb, gt_rgb).mean().double()
+        ssim_test_rgb += ssim(rendered_rgb, gt_rgb).mean().double()
         # L1_test_depth += l1_loss(rendered_rgb, gt_rgb)*1000
-        l1mat = np.abs((rendered_rgb - gt_rgb)) 
+        l1mat = np.abs((rendered_depth - gt_depth)) 
         masked_l1mat = np.ma.masked_equal(l1mat, 0)
+        masked_l1mat = np.clip(masked_l1mat,0,0.5)
         l1 = np.ma.mean(masked_l1mat)
+
         L1_test_depth += l1 * 1000
         # ssim_test_depth += ssim(rendered_rgb, gt_rgb)
         # print(psnr(rendered_rgb, gt_rgb).mean().double())
     
     psnr_test_rgb = psnr_test_rgb/image_num
     L1_test_depth = L1_test_depth/image_num
+    ssim_test_rgb = ssim_test_rgb/image_num
     # ssim_test_depth = ssim_test_depth/image_num
 
     for key in per_error_dict:
@@ -81,6 +86,7 @@ def eval_depth(gaussExtractor,TrainCameras):
 
 
     print("psnr_rgb",psnr_test_rgb)
+    print("ssim_rgb",ssim_test_rgb)
     print("L1_depth",L1_test_depth)
     # print("ssim_depth",ssim_test_depth)
     print("准确率分别是:",per_error_dict)

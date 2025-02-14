@@ -33,6 +33,11 @@ def read_array(path):
 
 def bin2depth(depth_map_path, output_path,gt_depth_path):
     depth_map = read_array(depth_map_path)
+    min_depth, max_depth = np.percentile(depth_map[depth_map > 0], [2, 98])
+    depth_map_save = (depth_map - min_depth) / (max_depth - min_depth) * 255
+    depth_map_save = np.nan_to_num(depth_map_save).astype(np.uint8)
+    image = Image.fromarray(depth_map_save).convert('L')
+    image.save(output_path)
 
     per_error_range = [5,10,20,30,50]
     per_error_dict = {item: 0 for item in per_error_range}
@@ -60,6 +65,7 @@ def bin2depth(depth_map_path, output_path,gt_depth_path):
 
     # l1 = l1_loss(torch.tensor(depth_map).to(torch.float64), torch.tensor(gt_depth_map_scaled).to(torch.float64))
     l1mat = np.abs((depth_map - gt_depth_map_scaled))
+    l1mat = np.clip(l1mat,0,0.5)
     masked_l1mat = np.ma.masked_equal(l1mat, 0)
 
     l1 = np.ma.mean(masked_l1mat)
@@ -81,10 +87,13 @@ def bin2depth(depth_map_path, output_path,gt_depth_path):
     # image.save(output_path)
 
 # 示例：将所有深度图转换为 PNG 格式
-depthmaps_dir = "data/tum/rgbd_dataset_freiburg1_floor_colmap/dense/stereo/depth_maps"
-output_dir = "data/tum/rgbd_dataset_freiburg1_floor_colmap/dense/stereo/depth_maps_png"
+root_path = "data/tum/rgbd_dataset_freiburg1_360"
 
-gt_dir = "data/tum/rgbd_dataset_freiburg1_floor_colmap/depth_colmap"
+
+depthmaps_dir =root_path + "/dense/stereo/depth_maps"
+output_dir = root_path + "/dense/stereo/depth_maps_png"
+
+gt_dir = root_path + "/depth_colmap"
 os.makedirs(output_dir, exist_ok=True)
 depth_files = sorted(os.listdir(gt_dir),key=lambda item: int(item.split("_")[0]))
 
@@ -106,6 +115,7 @@ for file in sorted(os.listdir(depthmaps_dir),key=lambda item: int(item.split("."
         per_error_dicts.append(per_error_dict)
 
         l1_all += l1
+        # print(l1)
 
 
 

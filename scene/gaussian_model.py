@@ -246,8 +246,8 @@ class GaussianModel:
         #                                             lr_delay_mult=0.5,
         #                                             max_steps=training_args.position_lr_max_steps)
 
-        self.extra_trans_scheduler_args = get_expon_lr_func(lr_init=1e-5,
-                                                    lr_final=2e-5,
+        self.extra_trans_scheduler_args = get_expon_lr_func(lr_init=1.5e-5,
+                                                    lr_final=2.0e-5,
                                                     lr_delay_steps = 0,
                                                     lr_delay_mult=0.5,
                                                     max_steps=training_args.position_lr_max_steps)

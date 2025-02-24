@@ -24,6 +24,9 @@ from utils.mesh_utils import GaussianExtractor, to_cam_open3d, post_process_mesh
 from utils.render_utils import generate_path, create_videos
 
 from extra_models.vis_zyb import vis_pose_error
+import matplotlib.pyplot as plt
+
+from extra_models import eval_depth
 
 import open3d as o3d
 
@@ -56,53 +59,75 @@ if __name__ == "__main__":
     
     train_dir = os.path.join(args.model_path, 'train', "ours_{}".format(scene.loaded_iter))
     test_dir = os.path.join(args.model_path, 'test', "ours_{}".format(scene.loaded_iter))
-    gaussExtractor = GaussianExtractor(gaussians, render, pipe, bg_color=bg_color)
+    gaussExtractor = GaussianExtractor(gaussians, render, pipe, bg_color=bg_color) 
+
+    # img_array = vis_pose_error(scene.train_cameras,scene.train_cameras_gt,extra_trans = gaussians.extra_trans,logate=True)       
+    # plt.clf()
+    # plt.imshow(img_array)
+    # plt.show()
+
+    if not args.skip_train:
+        print("export training images ...")
+        os.makedirs(train_dir, exist_ok=True)
+        train_camera = scene.getTrainCameras()
+        extra_trans = scene.gaussians.extra_trans
+        idx_camera = 0
+        for camera in train_camera:
+            idx = int(camera.image_name)
+            extra_tran = torch.inverse(extra_trans[idx])
+            # extra_tran = extra_trans[idx]
+
+            trans_w2c = extra_tran @ torch.inverse((camera.world_view_transform).T)
+            camera.world_view_transform = torch.inverse(trans_w2c).T
+            
+            # camera.world_view_transform = (extra_tran @ (camera.world_view_transform).T).T 
+            camera.full_proj_transform = camera.world_view_transform @ camera.projection_matrix
+            train_camera[idx_camera] = camera
+            idx_camera += 1
+            # 注意这里不要跳过，计算了位姿的优化
 
 
-
-    
-    # vis_pose_error(scene.train_cameras,scene.train_cameras_gt,extra_trans = gaussians.extra_trans)    
-    
-    # if not args.skip_train:
-    #     print("export training images ...")
-    #     os.makedirs(train_dir, exist_ok=True)
-    #     gaussExtractor.reconstruction(scene.getTrainCameras())
-    #     gaussExtractor.export_image(train_dir)
+        # gaussExtractor.reconstruction(scene.getTrainCameras())
+        # gaussExtractor.reconstruction(train_camera)
+        # gaussExtractor.export_image(train_dir)
         
     
-    # if (not args.skip_test) and (len(scene.getTestCameras()) > 0):
-    #     print("export rendered testing images ...")
-    #     os.makedirs(test_dir, exist_ok=True)
-    #     gaussExtractor.reconstruction(scene.getTestCameras())
-    #     gaussExtractor.export_image(test_dir)
+    if (not args.skip_test) and (len(scene.getTestCameras()) > 0):
+        print("export rendered testing images ...")
+        os.makedirs(test_dir, exist_ok=True)
+        gaussExtractor.reconstruction(scene.getTestCameras())
+        gaussExtractor.export_image(test_dir)
     
     
-    # if args.render_path:
-    #     print("render videos ...")
-    #     traj_dir = os.path.join(args.model_path, 'traj', "ours_{}".format(scene.loaded_iter))
-    #     os.makedirs(traj_dir, exist_ok=True)
-    #     n_fames = 240
-    #     cam_traj = generate_path(scene.getTrainCameras(), n_frames=n_fames)
-    #     gaussExtractor.reconstruction(cam_traj)
-    #     gaussExtractor.export_image(traj_dir)
-    #     create_videos(base_dir=traj_dir,
-    #                 input_dir=traj_dir, 
-    #                 out_name='render_traj', 
-    #                 num_frames=n_fames)
+    if args.render_path:
+        print("render videos ...")
+        traj_dir = os.path.join(args.model_path, 'traj', "ours_{}".format(scene.loaded_iter))
+        os.makedirs(traj_dir, exist_ok=True)
+        n_fames = 240
+        cam_traj = generate_path(scene.getTrainCameras(), n_frames=n_fames)
+        gaussExtractor.reconstruction(cam_traj)
+        gaussExtractor.export_image(traj_dir)
+        create_videos(base_dir=traj_dir,
+                    input_dir=traj_dir, 
+                    out_name='render_traj', 
+                    num_frames=n_fames)
 
     if not args.skip_mesh:
         print("export mesh ...")
         os.makedirs(train_dir, exist_ok=True)
         # set the active_sh to 0 to export only diffuse texture
         gaussExtractor.gaussians.active_sh_degree = 0
-        gaussExtractor.reconstruction(scene.getTrainCameras(),gt=True)
+        gaussExtractor.reconstruction(scene.getTrainCameras(),gt=True,scene = scene)
+        # gaussExtractor.export_image(train_dir)
 
+        # eval_depth.eval_depth(gaussExtractor,scene)
+        # exit()
         # extract the mesh and save
         if args.unbounded:
-            name = 'fuse_unbounded_depth.ply'
+            name = 'fuse_unbounded.ply'
             mesh = gaussExtractor.extract_mesh_unbounded(resolution=args.mesh_res)
         else:
-            name = 'fuse_depth.ply'
+            name = 'fuse.ply'
             depth_trunc = (gaussExtractor.radius * 2.0) if args.depth_trunc < 0  else args.depth_trunc
             voxel_size = (depth_trunc / args.mesh_res) if args.voxel_size < 0 else args.voxel_size
             sdf_trunc = 5.0 * voxel_size if args.sdf_trunc < 0 else args.sdf_trunc

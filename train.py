@@ -53,10 +53,10 @@ except ImportError:
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint,args):
     first_iter = 0
 
-    # depth_scale = 6553.5
+    depth_scale = 6553.5
     # replica
 
-    depth_scale = 5000
+    # depth_scale = 5000
     # tum
 
     tb_writer = prepare_output_and_logger(dataset)

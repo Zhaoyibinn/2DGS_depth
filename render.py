@@ -118,9 +118,11 @@ if __name__ == "__main__":
         # set the active_sh to 0 to export only diffuse texture
         gaussExtractor.gaussians.active_sh_degree = 0
         gaussExtractor.reconstruction(scene.getTrainCameras())
-        # gaussExtractor.export_image(train_dir)
+        gaussExtractor.export_image(train_dir)
 
-        eval_depth.eval_depth(gaussExtractor,scene.getTrainCameras())
+        # eval_depth.eval_depth(gaussExtractor,scene)
+
+        exit()
         # extract the mesh and save
         if args.unbounded:
             name = 'fuse_unbounded.ply'

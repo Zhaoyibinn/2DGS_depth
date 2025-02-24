@@ -6,7 +6,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
-def eval_depth(gaussExtractor,TrainCameras):
+def eval_depth(gaussExtractor,scene):
+    TrainCameras = scene.getTrainCameras()
+    model_path = scene.model_path
+    result_save_path = os.path.join(model_path,"depth_eval_results.txt")
     results = {}
     rendered_rgbs = gaussExtractor.rgbmaps
     rendered_depths = gaussExtractor.depthmaps
@@ -49,6 +52,8 @@ def eval_depth(gaussExtractor,TrainCameras):
         gt_depth = gt_depths[i] / depth_scale
         count = np.sum(np.array(rendered_depth) > 0.00)
 
+        rendered_depth[gt_depth==0]=0
+
         for per_error in per_error_dict.keys():
             count_notok = np.sum(np.abs((np.array(rendered_depth) - np.array(gt_depth))) > per_error / 1000)
             ok_per = (count - count_notok) / count
@@ -57,7 +62,7 @@ def eval_depth(gaussExtractor,TrainCameras):
 
 
 
-        rendered_depth[gt_depth==0]=0
+        
 
 
         # fig, axes = plt.subplots(1, 2, figsize=(10, 5)) 
@@ -65,11 +70,17 @@ def eval_depth(gaussExtractor,TrainCameras):
         # axes[1].imshow(np.transpose(gt_rgb, (1, 2, 0)))
         
         psnr_test_rgb += psnr(rendered_rgb, gt_rgb).mean().double()
-        ssim_test_rgb += ssim(rendered_rgb, gt_rgb).mean().double()
+        # ssim_test_rgb += ssim(rendered_rgb, gt_rgb).mean().double()
         # L1_test_depth += l1_loss(rendered_rgb, gt_rgb)*1000
         l1mat = np.abs((rendered_depth - gt_depth)) 
+        # masked_l1mat = np.ma.masked_equal(l1mat, 0)
+        if gt_depth.shape[1]==640:
+            clip_the = 0.5
+        else:
+            clip_the = 0.1
+    
         masked_l1mat = np.ma.masked_equal(l1mat, 0)
-        masked_l1mat = np.clip(masked_l1mat,0,0.5)
+        masked_l1mat = np.clip(masked_l1mat,0,clip_the)
         l1 = np.ma.mean(masked_l1mat)
 
         L1_test_depth += l1 * 1000
@@ -86,9 +97,26 @@ def eval_depth(gaussExtractor,TrainCameras):
 
 
     print("psnr_rgb",psnr_test_rgb)
-    print("ssim_rgb",ssim_test_rgb)
+    # print("ssim_rgb",ssim_test_rgb)
     print("L1_depth",L1_test_depth)
     # print("ssim_depth",ssim_test_depth)
     print("准确率分别是:",per_error_dict)
     print("---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------")
+    print("saved to ",result_save_path)
+
+    with open(result_save_path, 'w', encoding='utf-8') as file:
+    # 清空文件内容（'w' 模式会自动清空文件）
+        pass  # 这里不需要做任何操作，'w' 模式已经清空了文件
+
+    with open(result_save_path, 'a', encoding='utf-8') as file:
+        file.write(str(psnr_test_rgb.item()) + "\n")
+        file.write(str(L1_test_depth) + "\n")
+        for key in per_error_dict:
+            file.write(str(per_error_dict[key]) + "\n")
+
+
+
+
+    
+    
     return results

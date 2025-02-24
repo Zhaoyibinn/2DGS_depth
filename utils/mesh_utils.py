@@ -104,7 +104,7 @@ class GaussianExtractor(object):
         self.image_name = []
 
     @torch.no_grad()
-    def reconstruction(self, viewpoint_stack,gt = False):
+    def reconstruction(self, viewpoint_stack,gt = False,scene=None):
         """
         reconstruct radiance field given cameras
         """
@@ -120,15 +120,18 @@ class GaussianExtractor(object):
             normal = torch.nn.functional.normalize(render_pkg['rend_normal'], dim=0)
             if gt:
                 image_name = viewpoint_cam.image_name
-                depth_dir = "data/tum/rgbd_dataset_freiburg1_floor_colmap/depth_renamed"
-                depth_image_path = os.path.join(depth_dir ,image_name+".png")
+                # depth_dir = "data/tum/rgbd_dataset_freiburg1_floor_colmap/depth_renamed"
+                # depth_image_path = os.path.join(depth_dir ,image_name+".png")
+                
+                depth = viewpoint_cam.depth
 
-                depth = cv2.imread(depth_image_path,cv2.IMREAD_UNCHANGED)
+                if depth.shape[1]==640:
+                    scale = 5000
+                else:
+                    scale = 6553.5
 
 
-
-                scale = 1000
-                depth = torch.tensor(depth / scale).to(torch.float).cuda().unsqueeze(0)
+                depth = (depth / scale).to(torch.float).cuda().unsqueeze(0)
 
                 # if depth.shape[0]==480:
                 #     scale = 5000
@@ -354,17 +357,17 @@ class GaussianExtractor(object):
             gt_depth = viewpoint_cam.depth
             save_img_u8(gt.permute(1,2,0).cpu().numpy(), os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))
             
-            difference = self.rgbmaps[idx] - gt
-            save_img_u8(difference.permute(1,2,0).cpu().numpy(), os.path.join(gts_path, 'diff_{0:05d}'.format(idx) + ".png"))
+            # difference = self.rgbmaps[idx] - gt
+            # save_img_u8(difference.permute(1,2,0).cpu().numpy(), os.path.join(gts_path, 'diff_{0:05d}'.format(idx) + ".png"))
 
-            gt_depth_vis = gt_depth/gt_depth.max() * 255
-            cv2.imwrite(os.path.join(vis_path, '{0:05d}_depth_gt_vis'.format(idx) + ".png"),np.array(gt_depth_vis))
+            # gt_depth_vis = gt_depth/gt_depth.max() * 255
+            # cv2.imwrite(os.path.join(vis_path, '{0:05d}_depth_gt_vis'.format(idx) + ".png"),np.array(gt_depth_vis))
             
             
-            scale_saved = 5000.0
-            depth_vis = (self.depthmaps[idx][0].cpu().numpy() * scale_saved)/gt_depth.max() * 255
-            depth_vis[gt_depth_vis==0]=0
-            cv2.imwrite(os.path.join(vis_path, '{0:05d}_depth_vis'.format(idx) + ".png"),np.array(depth_vis))
+            # scale_saved = 5000.0
+            # depth_vis = (self.depthmaps[idx][0].cpu().numpy() * scale_saved)/gt_depth.max() * 255
+            # depth_vis[gt_depth_vis==0]=0
+            # cv2.imwrite(os.path.join(vis_path, '{0:05d}_depth_vis'.format(idx) + ".png"),np.array(depth_vis))
             
 
             
@@ -375,7 +378,7 @@ class GaussianExtractor(object):
 
             save_img_u8(self.rgbmaps[idx].permute(1,2,0).cpu().numpy(), os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
             save_img_f32(self.depthmaps[idx][0].cpu().numpy(), os.path.join(vis_path, 'depth_{0:05d}'.format(idx) + ".tiff"))
-            save_img_u8(self.normals[idx].permute(1,2,0).cpu().numpy() * 0.5 + 0.5, os.path.join(vis_path, 'normal_{0:05d}'.format(idx) + ".png"))
+            # save_img_u8(self.normals[idx].permute(1,2,0).cpu().numpy() * 0.5 + 0.5, os.path.join(vis_path, 'normal_{0:05d}'.format(idx) + ".png"))
             # save_img_u8(self.depth_normals[idx].permute(1,2,0).cpu().numpy() * 0.5 + 0.5, os.path.join(vis_path, 'depth_normal_{0:05d}'.format(idx) + ".png"))
         # print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
         # print(np.array(scales).mean())

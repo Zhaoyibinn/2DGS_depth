@@ -31,25 +31,29 @@ def read_array(path):
     array = array.reshape((width, height, channels), order="F")
     return np.transpose(array, (1, 0, 2)).squeeze()
 
-def bin2depth(depth_map_path, output_path,gt_depth_path):
-    depth_map = read_array(depth_map_path)
-    min_depth, max_depth = np.percentile(depth_map[depth_map > 0], [2, 98])
-    depth_map_save = (depth_map - min_depth) / (max_depth - min_depth) * 255
-    depth_map_save = np.nan_to_num(depth_map_save).astype(np.uint8)
-    image = Image.fromarray(depth_map_save).convert('L')
-    image.save(output_path)
+def eval_depth(rendered_path,gt_path):
+
+    depth_map = cv2.imread(rendered_path,cv2.IMREAD_UNCHANGED)
+
+    # depth_map = read_array(depth_map_path)
+    # min_depth, max_depth = np.percentile(depth_map[depth_map > 0], [2, 98])
+    # depth_map_save = (depth_map - min_depth) / (max_depth - min_depth) * 255
+    # depth_map_save = np.nan_to_num(depth_map_save).astype(np.uint8)
+    # image = Image.fromarray(depth_map_save).convert('L')
+    # image.save(output_path)
 
     per_error_range = [5,10,20,30,50]
     per_error_dict = {item: 0 for item in per_error_range}
 
 
-    gt_depth_map = cv2.imread(gt_depth_path,cv2.IMREAD_UNCHANGED)
+    gt_depth_map = cv2.imread(gt_path,cv2.IMREAD_UNCHANGED)
     if gt_depth_map.shape[0]==480:
         scale = 5000
     else:
         scale = 6553.5
     
     gt_depth_map_scaled = gt_depth_map / scale
+    
 
     depth_map[gt_depth_map_scaled == 0] = 0
     # l1 = l1_loss(torch.tensor(depth_map).to(torch.float64), torch.tensor(gt_depth_map_scaled).to(torch.float64))
@@ -65,6 +69,7 @@ def bin2depth(depth_map_path, output_path,gt_depth_path):
 
     # l1 = l1_loss(torch.tensor(depth_map).to(torch.float64), torch.tensor(gt_depth_map_scaled).to(torch.float64))
     l1mat = np.abs((depth_map - gt_depth_map_scaled))
+    l1mat_origin = l1mat
     if gt_depth_map_scaled.shape[1]==640:
         clip_the = 0.5
     else:
@@ -78,7 +83,7 @@ def bin2depth(depth_map_path, output_path,gt_depth_path):
     # ssim_out = ssim(torch.tensor(depth_map).to(torch.float64).unsqueeze(0) , torch.tensor(gt_depth_map_scaled).to(torch.float64).unsqueeze(0))
     ssim_out = 0
 # print(per_error_dict)
-    return per_error_dict , l1 , ssim_out
+    return per_error_dict , l1 , ssim_out,l1mat_origin
     # min_depth, max_depth = np.percentile(depth_map[depth_map > 0], [2, 98])
     # depth_map[depth_map <= 0] = np.nan
     # depth_map[depth_map < min_depth] = min_depth
@@ -92,37 +97,50 @@ def bin2depth(depth_map_path, output_path,gt_depth_path):
     # image.save(output_path)
 
 # 示例：将所有深度图转换为 PNG 格式
-root_path = "data/replica/room0"
+root_path = "data/tum/rgbd_dataset_freiburg1_floor"
 
+splatam_path = "splatam_results/TUM/freiburg1_floor_seed0"
 
-depthmaps_dir =root_path + "/dense/stereo/depth_maps"
-output_dir = root_path + "/dense/stereo/depth_maps_png"
+depthmaps_dir =splatam_path + "/eval/depth"
+txt_save_path = splatam_path + "/eval/depth_l1.txt"
+l1_mat_save_path = splatam_path + "/eval/depth_l1_mat_np.npy"
+# os.mkdir(l1_mat_save_path)
+with open(txt_save_path, 'w', encoding='utf-8') as file:
+    # 清空文件内容（'w' 模式会自动清空文件）
+    pass  # 这里不需要做任何操作，'w' 模式已经清空了文件
 
 gt_dir = root_path + "/depth_colmap"
-os.makedirs(output_dir, exist_ok=True)
+# os.makedirs(output_dir, exist_ok=True)
 depth_files = sorted(os.listdir(gt_dir),key=lambda item: int(item.split("_")[0]))
+
+depth_render_files = sorted(os.listdir(depthmaps_dir),key=lambda item: int(item.split(".")[0][5:]))
 
 l1_all = 0
 ssim_all = 0
 per_error_dicts = []
+l1mat_origin_all = []
+with open(txt_save_path, 'a', encoding='utf-8') as file:
+    for i in range(depth_render_files.__len__()):
 
-for file in sorted(os.listdir(depthmaps_dir),key=lambda item: int(item.split(".")[0])):
-    parts = file.split('.')
-    depth_name = parts[0] + "_depth.png"
-    if "geometric" not in file:
-        continue
-    print("operating",file.split(".")[0])
-    
-    if file.endswith(".bin"):
-        bin_path = os.path.join(depthmaps_dir, file)
-        png_path = os.path.join(output_dir, file.replace(".bin", ".png"))
-        gt_depth_path = os.path.join(gt_dir , depth_name)
-        
-        per_error_dict,l1 , ssim = bin2depth(bin_path, png_path,gt_depth_path)
+        gt_path = os.path.join(gt_dir,depth_files[i])
+        rendered_path = os.path.join(depthmaps_dir,depth_render_files[i])
+
+        print("operating:",i)
+        per_error_dict,l1 , ssim ,l1mat_origin= eval_depth(rendered_path,gt_path)
+        l1mat_origin_all.append(l1mat_origin)
         per_error_dicts.append(per_error_dict)
 
         l1_all += l1
-        # print(l1)
+        
+        file.write(str(l1) + "\n")
+
+
+# l1mat_origin_all_np = np.array(l1mat_origin_all)
+# np.save(l1_mat_save_path,l1mat_origin_all_np)
+# print("l1 mat np saved to :",l1_mat_save_path)
+
+
+    # print(l1)
 
 
 

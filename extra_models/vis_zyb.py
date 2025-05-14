@@ -116,8 +116,8 @@ def vis_pose_error(error_poses_cam,gt_poses_cam,extra_trans = None,logate = Fals
     y = gt_poses_np_t[:,1]
     z = gt_poses_np_t[:,2]
 
-    ax1.plot(x, y,label ="gt")
-    ax2.plot(x, z,label ="gt")
+    ax1.plot(x, y,label ="gt",linewidth=0.25)
+    ax2.plot(x, z,label ="gt",linewidth=0.25)
 
     
     # error_poses_np_t = error_poses_np_T[:,:3,3]
@@ -126,15 +126,15 @@ def vis_pose_error(error_poses_cam,gt_poses_cam,extra_trans = None,logate = Fals
     y = error_poses_np_t[:,1]
     z = error_poses_np_t[:,2]
 
-    ax1.plot(x, y,label ="error")
-    ax2.plot(x, z,label ="error")
+    ax1.plot(x, y,label ="error",linewidth=0.25)
+    ax2.plot(x, z,label ="error",linewidth=0.25)
 
 
 
     # extra_trans默认是高斯的变换，对应到世界就是反变换
 
     # 这里的R和t都是
-
+    better_poses_np_T = None
     if extra_trans != None:
         extra_poses_np_T = np.array(extra_trans.cpu().detach())
 
@@ -151,8 +151,8 @@ def vis_pose_error(error_poses_cam,gt_poses_cam,extra_trans = None,logate = Fals
         x = better_poses_np_t[:,0]
         y = better_poses_np_t[:,1]
         z = better_poses_np_t[:,2]
-        ax1.plot(x, y,label ="extra_trans" )
-        ax2.plot(x, z,label ="extra_trans" )
+        ax1.plot(x, y,label ="extra_trans",linewidth=0.25 )
+        ax2.plot(x, z,label ="extra_trans" ,linewidth=0.25)
 
         # print("ok")
     ax1.legend(loc = 'upper right')
@@ -190,4 +190,4 @@ def vis_pose_error(error_poses_cam,gt_poses_cam,extra_trans = None,logate = Fals
     # plt.show()
 
     
-    return img_array
+    return img_array , gt_poses_np_T , error_poses_np_T,better_poses_np_T

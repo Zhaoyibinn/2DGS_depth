@@ -50,12 +50,20 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     first_iter = 0
 
     # depth_scale = 6553.5
-    depth_scale = 5000
+    # # depth_scale = 5000
 
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
     scene = Scene(dataset, gaussians)
     gaussians.training_setup(opt)
+
+    if scene.train_cameras[1.0][10].original_image.shape[1] == 480:
+        depth_scale = 5000
+        # tum
+    else:
+        depth_scale = 6553.5
+        # replica
+
     if checkpoint:
         (model_params, first_iter) = torch.load(checkpoint)
         gaussians.restore(model_params, opt)

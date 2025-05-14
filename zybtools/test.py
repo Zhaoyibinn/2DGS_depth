@@ -1,29 +1,28 @@
 import numpy as np
-import torch
-import cv2
 
-txt_path = "/home/zhaoyibin/3DRE/3DGS/SplaTAM/experiments/TUM/freiburg1_room_seed0/eval/l1.txt"
-
-numbers = []
-with open(txt_path, 'r') as file:
-    for line in file:
-        # 去掉每行的首尾空格，并将字符串转换为数字
-        try:
-            num = float(line.strip())  # 如果数字是整数，也可以用 int(line.strip())
-            numbers.append(num)
-        except ValueError:
-            print(f"Warning: Line '{line.strip()}' is not a valid number and will be skipped.")
-
-numbers_array = np.array(numbers)
+splat2world =np.array([[0.00120 ,-0.00167 ,0.96996 ],
+[0.00393, -0.00041 ,0.42988 ],
+[0.00094 ,0.00384, 0.76425  ],
+[0.00000 ,0.00000 ,1.00000 ]] )
 
 
 
-print(numbers_array.mean() * 1000)
 
-for thereshold in [5,10,20,30,50]:
-    count_greater_than_threshold = np.sum(numbers_array <(thereshold /1000))
-    total_elements = numbers_array.size
-    proportion = count_greater_than_threshold / total_elements if total_elements > 0 else 0
-    print(thereshold," : ",proportion)
+world2ndc = np.array([
+    [1.29151 ,-0.99499 ,0.38470 ,0.38466 ],
+    [-0.91318, -0.76898 ,0.74386, 0.74379 ],
+    [-0.33372 ,-1.74646, -0.54670, -0.54664],
+    [0.96677, 1.75276,0.93733 ,0.94724]
+])
 
+ndc2pix = np.array([
+    [320.00000 ,0.00000, 0.00000],
+    [0.00000, 240.00000, 0.00000 ],
+    [0.00000, 0.00000 ,0.00000 ],
+    [319.50000, 239.50000 ,1.00000 ]]
+)
+
+T = splat2world.T @ world2ndc @ ndc2pix
+
+print(T)
 

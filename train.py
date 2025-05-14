@@ -53,16 +53,21 @@ except ImportError:
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint,args):
     first_iter = 0
 
-    depth_scale = 6553.5
-    # replica
-
-    # depth_scale = 5000
-    # tum
 
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
     scene = Scene(dataset, gaussians,shuffle=False)
     gaussians.training_setup(opt)
+
+    if scene.train_cameras[1.0][10].original_image.shape[1] == 480:
+        depth_scale = 5000
+        # tum
+    else:
+        depth_scale = 6553.5
+        # replica
+
+
+
 
     S3IM_loss = S3IM()
     
@@ -89,7 +94,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     if rerun_viewer:
         rr.init("3dgsviewer")
         rr.spawn(connect=False)
-        rr.connect()
+        # rr.connect()
+        # rr.connect_tcp("127.0.0.1:9876")
 
 
 
@@ -227,16 +233,22 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
 
         if iteration%100==0:
-            if iteration%5000 == 0:
-                trajectory_img = vis_pose_error(scene.train_cameras,scene.train_cameras_gt,extra_trans = gaussians.extra_trans,logate=True)
+            if iteration%2000 == 0:
+                trajectory_img , gt_poses_np_T , error_poses_np_T,better_poses_np_T= vis_pose_error(scene.train_cameras,scene.train_cameras_gt,extra_trans = gaussians.extra_trans,logate=False)
                 cv2.imwrite(f"vis/vis_{iteration}.png",trajectory_img)
+                
             else:
-                trajectory_img = vis_pose_error(scene.train_cameras,scene.train_cameras_gt,extra_trans = gaussians.extra_trans)
+                trajectory_img, gt_poses_np_T , error_poses_np_T,better_poses_np_T = vis_pose_error(scene.train_cameras,scene.train_cameras_gt,extra_trans = gaussians.extra_trans,logate=True)
                 
                 model_name = scene.model_path.split("/")[-1]
                 if not os.path.exists(f"vis/{model_name}"):
                     os.makedirs(f"vis/{model_name}")
                 cv2.imwrite(f"vis/{model_name}/vis_{iteration}.png",trajectory_img)
+
+                
+
+            if iteration==29000:
+                np.savez(f"vis/{model_name}/vis_{iteration}.npz", gt=gt_poses_np_T, error=error_poses_np_T,better=better_poses_np_T)
         # if rerun_viewer and (int(viewpoint_cam.image_name) == 519 or iteration%100 == 0):
         if rerun_viewer and iteration%100 == 0:
             # acc_extra_trans = []
@@ -411,7 +423,7 @@ def prepare_output_and_logger(args):
 
 @torch.no_grad()
 def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_iterations, scene : Scene, renderFunc, renderArgs,args):
-    if tb_writer:
+    if tb_writer:   
         tb_writer.add_scalar('train_loss_patches/reg_loss', Ll1.item(), iteration)
         tb_writer.add_scalar('train_loss_patches/total_loss', loss.item(), iteration)
         tb_writer.add_scalar('iter_time', elapsed, iteration)
